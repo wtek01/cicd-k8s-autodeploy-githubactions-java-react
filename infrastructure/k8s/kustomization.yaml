@@ -1,0 +1,13 @@
+# Mise à jour pour inclure le monitoring avec Prometheus et Grafana
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - kafka-statefulset.yml
+  - postgres-deployment.yml
+  - user-service.yml
+  - order-service.yml
+  - ingress.yml
+  - monitoring-ingress.yml
+  - service-monitors.yml
+  - frontend-deployment.yml

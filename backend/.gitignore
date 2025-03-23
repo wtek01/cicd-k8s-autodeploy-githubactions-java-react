@@ -1,0 +1,23 @@
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# Spring Boot
+.spring-boot-devtools
+*.properties.local
+
+# JAR files
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# Compiled class files
+*.class
+
+# Log files
+*.log
+
+# JUnit report files
+*/test-output/
+*/reports/
