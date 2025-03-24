@@ -3,12 +3,12 @@ name: Build and Publish
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
     paths-ignore:
-      - '**.md'
+      - "**.md"
   pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:  # Pour déclencher manuellement le workflow
+    branches: [main, master]
+  workflow_dispatch: # Pour déclencher manuellement le workflow
 
 jobs:
   build-and-test:
@@ -39,8 +39,8 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
-          java-version: '17'
-          distribution: 'temurin'
+          java-version: "17"
+          distribution: "temurin"
           cache: maven
 
       - name: Build and test with Maven
@@ -70,7 +70,7 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     strategy:
       matrix:
-        service: [user-service, order-service]
+        service: [user-service, order-service, frontend]
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -100,11 +100,22 @@ jobs:
             type=semver,pattern={{version}},value=${{ steps.get-version.outputs.version }}
             type=raw,value=latest,enable={{is_default_branch}}
 
+      - name: Set Build Context and Dockerfile Path
+        id: set-context
+        run: |
+          if [ "${{ matrix.service }}" == "frontend" ]; then
+            echo "context=frontend" >> $GITHUB_OUTPUT
+            echo "dockerfile=frontend/Dockerfile" >> $GITHUB_OUTPUT
+          else
+            echo "context=." >> $GITHUB_OUTPUT
+            echo "dockerfile=${{ matrix.service }}/Dockerfile" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v3
         with:
-          context: .
-          file: ${{ matrix.service }}/Dockerfile
+          context: ${{ steps.set-context.outputs.context }}
+          file: ${{ steps.set-context.outputs.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -115,7 +126,7 @@ jobs:
     needs: build-and-push-images
     runs-on: self-hosted
     permissions:
-      contents: write  # Important: donne les permissions d'écriture
+      contents: write # Important: donne les permissions d'écriture
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -136,6 +147,7 @@ jobs:
           # Mettre à jour les manifests avec la nouvelle version d'image
           (Get-Content k8s/user-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:${{ steps.get-version.outputs.version }}" | Set-Content k8s/user-service.yml
           (Get-Content k8s/order-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:${{ steps.get-version.outputs.version }}" | Set-Content k8s/order-service.yml
+          (Get-Content k8s/frontend-deployment.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:${{ steps.get-version.outputs.version }}" | Set-Content k8s/frontend-deployment.yml
 
       - name: Commit and push updated manifests
         shell: powershell
@@ -143,10 +155,10 @@ jobs:
           git config --local user.email "wtek01@gmail.com"
           git config --local user.name "GitHub Actions Bot"
           git add k8s/*.yml
-          
+
           # Tenter de faire un commit et capturer l'erreur éventuelle
           $commitOutput = git commit -m "ci: update k8s manifests with new image versions" 2>&1
-          
+
           # Ignorer l'erreur si c'est "nothing to commit"
           if ($commitOutput -match "nothing to commit" -or $LASTEXITCODE -eq 0) {
               Write-Host "Commit successful or nothing to commit"

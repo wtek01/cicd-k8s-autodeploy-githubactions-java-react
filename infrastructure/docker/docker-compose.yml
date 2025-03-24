@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.3.0
@@ -6,8 +6,25 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_MAX_CLIENT_CNXNS: 0
+      ZOOKEEPER_SYNC_LIMIT: 2
+      ZOOKEEPER_INIT_LIMIT: 5
+      ZOOKEEPER_SESSION_TIMEOUT_MS: 40000
+      ZOOKEEPER_AUTOPURGE_PURGE_INTERVAL: 1
+      ZOOKEEPER_AUTOPURGE_SNAP_RETAIN_COUNT: 3
+      ZOOKEEPER_MAX_SESSION_TIMEOUT: 40000
+      ZOOKEEPER_MIN_SESSION_TIMEOUT: 4000
+      ZOOKEEPER_SERVER_ID: 1
+      ZOOKEEPER_SERVER_1: zookeeper:2888:3888
+      ZOOKEEPER_4LW_COMMANDS_WHITELIST: "*"
+      ZOOKEEPER_ELECTION_ALG: 3
+      ZOOKEEPER_SERVER_CNXN_FACTORY: org.apache.zookeeper.server.NettyServerCnxnFactory
+      ZOOKEEPER_SERVER_CNXN_FACTORY_MAX_CLIENT_CNXNS: 0
+      ZOOKEEPER_SERVER_CNXN_FACTORY_MAX_CLIENT_CNXNS_PER_IP: 0
     ports:
       - "2181:2181"
+      - "2888:2888"
+      - "3888:3888"
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "2181"]
       interval: 5s
@@ -54,8 +71,8 @@ services:
 
   user-service:
     build:
-      context: .
-      dockerfile: user-service/Dockerfile.alt
+      context: ../..
+      dockerfile: backend/user-service/Dockerfile
     container_name: user-service
     environment:
       SPRING_PROFILES_ACTIVE: docker
@@ -76,8 +93,8 @@ services:
 
   order-service:
     build:
-      context: .
-      dockerfile: order-service/Dockerfile.alt
+      context: ../..
+      dockerfile: backend/order-service/Dockerfile
     container_name: order-service
     environment:
       SPRING_PROFILES_ACTIVE: docker

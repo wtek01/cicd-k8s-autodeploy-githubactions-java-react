@@ -1,54 +1,99 @@
-# React + TypeScript + Vite
+# Microservices Frontend Application
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is the frontend React application for the Microservices Demo project. It provides a web interface to interact with the user and order microservices.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- View and create users
+- View user details including their orders
+- Create orders for users
+- Browse all orders in the system
 
-## Expanding the ESLint configuration
+## Technologies Used
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- React 18
+- React Router 6
+- CSS for styling
+- Nginx as the web server in production
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+## Development
+
+### Prerequisites
+
+- Node.js 16+ and npm
+
+### Running Locally
+
+1. Install dependencies:
+
+   ```
+   npm install
+   ```
+
+2. Start the development server:
+
+   ```
+   npm start
+   ```
+
+   The app will be available at http://localhost:3000
+
+3. For local development, the API calls will be directed to `http://localhost:8080`. Make sure you have set up port forwarding to your Kubernetes services:
+   ```
+   kubectl port-forward svc/ingress-nginx-controller -n ingress-nginx 8080:80
+   ```
+
+### Building for Production
+
+To build the application for production:
+
+```
+npm run build
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+This will create optimized production files in the `build` folder.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Docker
 
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    'react-x': reactX,
-    'react-dom': reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs['recommended-typescript'].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-})
+### Building the Docker Image
+
 ```
+docker build -t frontend:latest .
+```
+
+### Running the Docker Container
+
+```
+docker run -p 8080:80 frontend:latest
+```
+
+The application will be available at http://localhost:8080
+
+## Deployment
+
+This application is deployed to Kubernetes as part of the CI/CD pipeline. The deployment process:
+
+1. Builds the React application
+2. Creates a Docker image with the built app and Nginx
+3. Pushes the image to DockerHub
+4. Updates the Kubernetes manifest with the new image version
+5. Deploys to the Kubernetes cluster
+
+## Environment Configuration
+
+The application automatically detects the environment:
+
+- In development: API calls go to `http://localhost:8080`
+- In production: API calls go to `http://api.microservices.local`
+
+## Accessing the Application
+
+Once deployed, the application is accessible at:
+
+- http://app.microservices.local (when using the Ingress with a properly configured hosts file)
+
+## Notes for Development
+
+- Add `.env.local` for local environment variables if needed
+- The application uses the React Router for navigation
+- All API calls are relative to the base URL that's determined by the environment
