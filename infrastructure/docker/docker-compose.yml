@@ -113,6 +113,29 @@ services:
       - app-network
     restart: on-failure:3
 
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_ENVIRONMENT: docker
+        VITE_USER_SERVICE_URL: "http://localhost:8081"
+        VITE_ORDER_SERVICE_URL: "http://localhost:8082"
+    container_name: frontend
+    ports:
+      - "80:80"
+    environment:
+      ENVIRONMENT: docker
+      USER_SERVICE_URL: "http://localhost:8081"
+      ORDER_SERVICE_URL: "http://localhost:8082"
+      FRONTEND_URL: "http://docker.frontend.com"
+    depends_on:
+      - user-service
+      - order-service
+    networks:
+      - app-network
+    restart: on-failure:3
+
 volumes:
   postgres-data:
 

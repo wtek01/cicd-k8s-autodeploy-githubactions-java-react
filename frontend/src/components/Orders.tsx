@@ -1,11 +1,25 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import apiService from "../services/api";
 
-function Orders({ apiBaseUrl }) {
-  const [orders, setOrders] = useState([]);
-  const [users, setUsers] = useState({}); // Map of user IDs to names
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+interface Order {
+  id: string;
+  userId: string;
+  productId: string;
+  amount: number;
+}
+
+function Orders() {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [users, setUsers] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -13,31 +27,20 @@ function Orders({ apiBaseUrl }) {
         setLoading(true);
 
         // Fetch all orders
-        const ordersResponse = await fetch(`${apiBaseUrl}/orders`);
-        if (!ordersResponse.ok) {
-          throw new Error(
-            `Error fetching orders: ${ordersResponse.statusText}`
-          );
-        }
-        const ordersData = await ordersResponse.json();
+        const ordersData = (await apiService.getOrders()) as Order[];
         setOrders(ordersData);
 
         // Get unique user IDs from orders
         const userIds = [...new Set(ordersData.map((order) => order.userId))];
 
         // Fetch user details for each unique user ID
-        const userMap = {};
+        const userMap: Record<string, string> = {};
 
         await Promise.all(
-          userIds.map(async (userId) => {
+          userIds.map(async (userId: string) => {
             try {
-              const userResponse = await fetch(`${apiBaseUrl}/users/${userId}`);
-              if (userResponse.ok) {
-                const userData = await userResponse.json();
-                userMap[userId] = userData.name;
-              } else {
-                userMap[userId] = "Unknown User";
-              }
+              const userData = (await apiService.getUserById(userId)) as User;
+              userMap[userId] = userData.name;
             } catch (err) {
               console.warn(`Could not fetch user ${userId}:`, err);
               userMap[userId] = "Unknown User";
@@ -56,7 +59,7 @@ function Orders({ apiBaseUrl }) {
     };
 
     fetchData();
-  }, [apiBaseUrl]);
+  }, []);
 
   if (loading) {
     return <div className="loading">Loading orders...</div>;
@@ -67,51 +70,37 @@ function Orders({ apiBaseUrl }) {
   }
 
   return (
-    <div>
-      <div className="page-header">
-        <h2 className="page-title">Orders</h2>
-        <Link to="/orders/create" className="button">
-          Create New Order
+    <div className="orders-container">
+      <div className="orders-header">
+        <h2>Orders</h2>
+        <Link to="/orders/create" className="button create-button">
+          Create Order
         </Link>
       </div>
 
       {orders.length === 0 ? (
-        <p>No orders found. Create a new order to get started.</p>
+        <p>No orders found.</p>
       ) : (
-        <div className="table-container">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Order ID</th>
-                <th>User</th>
-                <th>Product</th>
-                <th>Amount</th>
-                <th>Date</th>
-                <th>Status</th>
+        <table className="orders-table">
+          <thead>
+            <tr>
+              <th>Order ID</th>
+              <th>User</th>
+              <th>Product ID</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((order) => (
+              <tr key={order.id}>
+                <td>{order.id}</td>
+                <td>{users[order.userId] || "Unknown User"}</td>
+                <td>{order.productId}</td>
+                <td>${order.amount.toFixed(2)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => (
-                <tr key={order.id}>
-                  <td>{order.id}</td>
-                  <td>
-                    <Link to={`/users/${order.userId}`}>
-                      {users[order.userId] || "Unknown User"}
-                    </Link>
-                  </td>
-                  <td>{order.productId}</td>
-                  <td>${order.amount ? order.amount.toFixed(2) : "N/A"}</td>
-                  <td>
-                    {order.orderDate
-                      ? new Date(order.orderDate).toLocaleString()
-                      : "N/A"}
-                  </td>
-                  <td>{order.status || "N/A"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );

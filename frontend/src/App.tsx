@@ -1,26 +1,34 @@
-import { useEffect, useState } from "react";
 import { Link, Route, BrowserRouter as Router, Routes } from "react-router-dom";
 import "./App.css";
 import CreateOrder from "./components/CreateOrder";
 import CreateUser from "./components/CreateUser";
+import EnvironmentIndicator from "./components/EnvironmentIndicator";
 import Header from "./components/Header";
 import Orders from "./components/Orders";
 import UserDetail from "./components/UserDetail";
 import Users from "./components/Users";
+import "./services/api"; // Importer le service API pour s'assurer qu'il est initialisé
+
+function Dashboard() {
+  return (
+    <div className="dashboard">
+      <h2>Welcome to the Microservices Demo</h2>
+      <div className="dashboard-links">
+        <Link to="/users" className="dashboard-link">
+          Manage Users
+        </Link>
+        <Link to="/orders" className="dashboard-link">
+          Manage Orders
+        </Link>
+      </div>
+
+      {/* Uncomment to show environment debug information */}
+      {/* <EnvDebug /> */}
+    </div>
+  );
+}
 
 function App() {
-  const [apiBaseUrl, setApiBaseUrl] = useState(
-    "http://api.microservices.local"
-  );
-
-  // For local development, check if we should use localhost instead
-  useEffect(() => {
-    // In development mode, use localhost with port forwarding
-    if (process.env.NODE_ENV === "development") {
-      setApiBaseUrl("http://localhost:8080");
-    }
-  }, []);
-
   return (
     <Router>
       <div className="app">
@@ -28,54 +36,19 @@ function App() {
         <main className="content">
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/users" element={<Users apiBaseUrl={apiBaseUrl} />} />
-            <Route
-              path="/users/create"
-              element={<CreateUser apiBaseUrl={apiBaseUrl} />}
-            />
-            <Route
-              path="/users/:id"
-              element={<UserDetail apiBaseUrl={apiBaseUrl} />}
-            />
-            <Route
-              path="/orders"
-              element={<Orders apiBaseUrl={apiBaseUrl} />}
-            />
-            <Route
-              path="/orders/create"
-              element={<CreateOrder apiBaseUrl={apiBaseUrl} />}
-            />
+            <Route path="/users" element={<Users />} />
+            <Route path="/users/create" element={<CreateUser />} />
+            <Route path="/users/:id" element={<UserDetail />} />
+            <Route path="/orders" element={<Orders />} />
+            <Route path="/orders/create" element={<CreateOrder />} />
           </Routes>
         </main>
         <footer className="footer">
           <p>Microservices Demo &copy; {new Date().getFullYear()}</p>
         </footer>
+        <EnvironmentIndicator />
       </div>
     </Router>
-  );
-}
-
-function Dashboard() {
-  return (
-    <div className="dashboard">
-      <h2>Welcome to Microservices Dashboard</h2>
-      <div className="dashboard-cards">
-        <div className="card">
-          <h3>Users</h3>
-          <p>Manage users in the system</p>
-          <Link to="/users" className="button">
-            View Users
-          </Link>
-        </div>
-        <div className="card">
-          <h3>Orders</h3>
-          <p>Manage orders in the system</p>
-          <Link to="/orders" className="button">
-            View Orders
-          </Link>
-        </div>
-      </div>
-    </div>
   );
 }
 

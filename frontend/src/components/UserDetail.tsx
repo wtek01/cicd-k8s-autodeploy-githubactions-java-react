@@ -1,48 +1,40 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import apiService, { OrderData, UserData } from "../services/api";
 
-function UserDetail({ apiBaseUrl }) {
+function UserDetail() {
   const { id } = useParams();
-  const [user, setUser] = useState(null);
-  const [orders, setOrders] = useState([]);
+  const [user, setUser] = useState<UserData | null>(null);
+  const [orders, setOrders] = useState<OrderData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchUserAndOrders = async () => {
+      if (!id) return;
+
       try {
         setLoading(true);
         // Fetch user details
-        const userResponse = await fetch(`${apiBaseUrl}/users/${id}`);
-
-        if (!userResponse.ok) {
-          throw new Error(`Error fetching user: ${userResponse.statusText}`);
-        }
-
-        const userData = await userResponse.json();
+        const userData = await apiService.getUserById(id);
         setUser(userData);
 
         // If user has orders, fetch order details
         if (userData.orderIds && userData.orderIds.length > 0) {
-          const orderPromises = userData.orderIds.map((orderId) =>
-            fetch(`${apiBaseUrl}/orders/${orderId}`)
-              .then((response) => {
-                if (!response.ok) {
-                  // Don't fail if a specific order can't be fetched
-                  console.warn(`Could not fetch order ${orderId}`);
-                  return null;
-                }
-                return response.json();
-              })
-              .catch((err) => {
-                console.warn(`Error fetching order ${orderId}:`, err);
-                return null;
-              })
-          );
+          const orderPromises = userData.orderIds.map(async (orderId) => {
+            try {
+              return await apiService.getOrderById(orderId);
+            } catch (err) {
+              console.warn(`Could not fetch order ${orderId}:`, err);
+              return null;
+            }
+          });
 
           const orderResults = await Promise.all(orderPromises);
           // Filter out any null results from failed requests
-          setOrders(orderResults.filter((order) => order !== null));
+          setOrders(
+            orderResults.filter((order): order is OrderData => order !== null)
+          );
         }
 
         setError(null);
@@ -55,7 +47,7 @@ function UserDetail({ apiBaseUrl }) {
     };
 
     fetchUserAndOrders();
-  }, [apiBaseUrl, id]);
+  }, [id]);
 
   if (loading) {
     return <div className="loading">Loading user details...</div>;
@@ -110,7 +102,7 @@ function UserDetail({ apiBaseUrl }) {
                     <tr key={order.id}>
                       <td>{order.id}</td>
                       <td>{order.productId}</td>
-                      <td>${order.amount ? order.amount.toFixed(2) : "N/A"}</td>
+                      <td>${order.amount.toFixed(2)}</td>
                       <td>
                         {order.orderDate
                           ? new Date(order.orderDate).toLocaleString()

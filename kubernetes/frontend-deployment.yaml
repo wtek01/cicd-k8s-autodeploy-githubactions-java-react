@@ -16,49 +16,42 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: wtek01/frontend:0.1.0
-          imagePullPolicy: Always
-          envFrom:
-            - configMapRef:
-                name: frontend-config
+          image: ${DOCKER_REGISTRY}/frontend:${IMAGE_TAG}
           ports:
             - containerPort: 80
+          env:
+            - name: ENVIRONMENT
+              value: "kubernetes"
+            - name: USER_SERVICE_URL
+              value: "http://api.microservices.local/users"
+            - name: ORDER_SERVICE_URL
+              value: "http://api.microservices.local/orders"
           resources:
             limits:
-              memory: "256Mi"
-              cpu: "300m"
+              cpu: "0.5"
+              memory: "512Mi"
             requests:
-              memory: "128Mi"
-              cpu: "100m"
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 80
-            initialDelaySeconds: 30
-            periodSeconds: 10
+              cpu: "0.2"
+              memory: "256Mi"
           readinessProbe:
             httpGet:
               path: /health
               port: 80
             initialDelaySeconds: 5
-            periodSeconds: 5
+            periodSeconds: 10
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: frontend
-  labels:
-    app: frontend
 spec:
   selector:
     app: frontend
   ports:
     - port: 80
       targetPort: 80
-      name: http
   type: ClusterIP
 ---
-# Update the Ingress to add the frontend service
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -66,7 +59,6 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /
 spec:
-  ingressClassName: nginx
   rules:
     - host: app.microservices.local
       http:

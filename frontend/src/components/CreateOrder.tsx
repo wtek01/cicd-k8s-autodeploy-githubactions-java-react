@@ -1,20 +1,33 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import apiService from "../services/api";
 
-function CreateOrder({ apiBaseUrl }) {
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  defaultPrice: number;
+}
+
+function CreateOrder() {
   const [userId, setUserId] = useState("");
   const [productId, setProductId] = useState("");
   const [amount, setAmount] = useState("");
-  const [users, setUsers] = useState([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchingUsers, setFetchingUsers] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   const navigate = useNavigate();
   const location = useLocation();
 
   // Sample product list (in a real app, this would come from an API)
-  const products = [
+  const products: Product[] = [
     { id: "prod-001", name: "Laptop", defaultPrice: 999.99 },
     { id: "prod-002", name: "Smartphone", defaultPrice: 699.99 },
     { id: "prod-003", name: "Headphones", defaultPrice: 149.99 },
@@ -27,14 +40,8 @@ function CreateOrder({ apiBaseUrl }) {
     const fetchUsers = async () => {
       try {
         setFetchingUsers(true);
-        const response = await fetch(`${apiBaseUrl}/users`);
-
-        if (!response.ok) {
-          throw new Error(`Error fetching users: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        setUsers(data);
+        const data = await apiService.getUsers();
+        setUsers(data as User[]);
 
         // If a userId was passed in location state, use it
         if (location.state && location.state.userId) {
@@ -49,7 +56,7 @@ function CreateOrder({ apiBaseUrl }) {
     };
 
     fetchUsers();
-  }, [apiBaseUrl, location.state]);
+  }, [location.state]);
 
   // Update amount when product is selected
   useEffect(() => {
@@ -61,7 +68,7 @@ function CreateOrder({ apiBaseUrl }) {
     }
   }, [productId]);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!userId || !productId || !amount) {
@@ -73,21 +80,11 @@ function CreateOrder({ apiBaseUrl }) {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`${apiBaseUrl}/orders`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId,
-          productId,
-          amount: parseFloat(amount),
-        }),
+      await apiService.createOrder({
+        userId,
+        productId,
+        amount: parseFloat(amount),
       });
-
-      if (!response.ok) {
-        throw new Error(`Error creating order: ${response.statusText}`);
-      }
 
       // Redirect to orders list after successful creation
       navigate("/orders");

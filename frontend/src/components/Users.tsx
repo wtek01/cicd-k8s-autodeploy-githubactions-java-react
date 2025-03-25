@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import apiService from "../services/api";
 
-function Users({ apiBaseUrl }) {
+const Users = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -10,17 +11,11 @@ function Users({ apiBaseUrl }) {
     const fetchUsers = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`${apiBaseUrl}/users`);
-
-        if (!response.ok) {
-          throw new Error(`Error fetching users: ${response.statusText}`);
-        }
-
-        const data = await response.json();
+        const data = await apiService.getUsers();
         setUsers(data);
         setError(null);
-      } catch (err) {
-        console.error("Error fetching users:", err);
+      } catch (error) {
+        console.error("Error fetching users:", error);
         setError("Failed to load users. Please try again later.");
       } finally {
         setLoading(false);
@@ -28,59 +23,51 @@ function Users({ apiBaseUrl }) {
     };
 
     fetchUsers();
-  }, [apiBaseUrl]);
-
-  if (loading) {
-    return <div className="loading">Loading users...</div>;
-  }
-
-  if (error) {
-    return <div className="error">{error}</div>;
-  }
+  }, []);
 
   return (
-    <div>
-      <div className="page-header">
-        <h2 className="page-title">Users</h2>
-        <Link to="/users/create" className="button">
-          Add New User
+    <div className="users-container">
+      <div className="users-header">
+        <h2>Users</h2>
+        <Link to="/users/create" className="button create-button">
+          Create User
         </Link>
       </div>
 
-      {users.length === 0 ? (
-        <p>No users found. Add a new user to get started.</p>
+      {loading ? (
+        <div className="loading">Loading users...</div>
+      ) : error ? (
+        <div className="error-message">{error}</div>
       ) : (
-        <div className="table-container">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Orders</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => (
-                <tr key={user.id}>
-                  <td>{user.id}</td>
-                  <td>{user.name}</td>
-                  <td>{user.email}</td>
-                  <td>{user.orderIds ? user.orderIds.length : 0}</td>
-                  <td className="actions">
-                    <Link to={`/users/${user.id}`} className="button">
-                      View Details
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="users-grid">
+          <div className="users-grid-header">
+            <div className="grid-item">ID</div>
+            <div className="grid-item">Name</div>
+            <div className="grid-item">Email</div>
+            <div className="grid-item">Orders</div>
+            <div className="grid-item">Actions</div>
+          </div>
+          {users.length === 0 ? (
+            <div className="no-data">No users found</div>
+          ) : (
+            users.map((user: any) => (
+              <div className="users-grid-row" key={user.id}>
+                <div className="grid-item">{user.id}</div>
+                <div className="grid-item">{user.name}</div>
+                <div className="grid-item">{user.email}</div>
+                <div className="grid-item">{user.orderIds?.length || 0}</div>
+                <div className="grid-item">
+                  <Link to={`/users/${user.id}`} className="button view-button">
+                    View
+                  </Link>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       )}
     </div>
   );
-}
+};
 
 export default Users;

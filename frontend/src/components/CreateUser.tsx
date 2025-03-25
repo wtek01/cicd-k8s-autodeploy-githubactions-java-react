@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import apiService from "../services/api";
 
-function CreateUser({ apiBaseUrl }) {
+function CreateUser() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!name || !email) {
@@ -20,17 +21,7 @@ function CreateUser({ apiBaseUrl }) {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`${apiBaseUrl}/users`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ name, email }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Error creating user: ${response.statusText}`);
-      }
+      await apiService.createUser({ name, email });
 
       // Redirect to users list after successful creation
       navigate("/users");

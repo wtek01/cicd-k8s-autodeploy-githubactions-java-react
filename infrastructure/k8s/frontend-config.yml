@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  labels:
+    app: frontend
+data:
+  VITE_API_BASE_URL: ""
+  VITE_USER_SERVICE_URL: "http://api.microservices.local/users"
+  VITE_ORDER_SERVICE_URL: "http://api.microservices.local/orders"
+  VITE_ENVIRONMENT: "kubernetes"
