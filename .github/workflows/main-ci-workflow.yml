@@ -44,7 +44,9 @@ jobs:
           cache: maven
 
       - name: Build and test with Maven
-        run: mvn -B clean verify
+        run: |
+          cd backend
+          mvn -B clean verify
         env:
           SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/orderdb
           SPRING_DATASOURCE_USERNAME: postgres
@@ -60,8 +62,8 @@ jobs:
         with:
           name: test-results
           path: |
-            **/target/surefire-reports/
-            **/target/failsafe-reports/
+            backend/**/target/surefire-reports/
+            backend/**/target/failsafe-reports/
           retention-days: 5
 
   build-and-push-images:
@@ -87,7 +89,7 @@ jobs:
       - name: Extract version from pom.xml
         id: get-version
         run: |
-          VERSION=$(grep -m1 "<version>" pom.xml | sed 's/[^0-9\.]//g')
+          VERSION=$(grep -m1 "<version>" backend/pom.xml | sed 's/[^0-9\.]//g')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Using version: $VERSION"
 
@@ -107,8 +109,8 @@ jobs:
             echo "context=frontend" >> $GITHUB_OUTPUT
             echo "dockerfile=frontend/Dockerfile" >> $GITHUB_OUTPUT
           else
-            echo "context=." >> $GITHUB_OUTPUT
-            echo "dockerfile=${{ matrix.service }}/Dockerfile" >> $GITHUB_OUTPUT
+            echo "context=backend" >> $GITHUB_OUTPUT
+            echo "dockerfile=backend/${{ matrix.service }}/Dockerfile" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and push Docker image
@@ -135,7 +137,7 @@ jobs:
         id: get-version
         shell: powershell
         run: |
-          $versionLine = Select-String -Path pom.xml -Pattern "<version>(.*?)</version>" | Select-Object -First 1
+          $versionLine = Select-String -Path backend/pom.xml -Pattern "<version>(.*?)</version>" | Select-Object -First 1
           $version = $versionLine -replace ".*<version>(.*?)</version>.*", '$1'
           $version = $version -replace "[^0-9\.]", ""
           echo "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
@@ -145,16 +147,16 @@ jobs:
         shell: powershell
         run: |
           # Mettre à jour les manifests avec la nouvelle version d'image
-          (Get-Content k8s/user-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:${{ steps.get-version.outputs.version }}" | Set-Content k8s/user-service.yml
-          (Get-Content k8s/order-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:${{ steps.get-version.outputs.version }}" | Set-Content k8s/order-service.yml
-          (Get-Content k8s/frontend-deployment.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:${{ steps.get-version.outputs.version }}" | Set-Content k8s/frontend-deployment.yml
+          (Get-Content infrastructure/k8s/user-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/user-service.yml
+          (Get-Content infrastructure/k8s/order-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/order-service.yml
+          (Get-Content infrastructure/k8s/frontend-deployment.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/frontend-deployment.yml
 
       - name: Commit and push updated manifests
         shell: powershell
         run: |
           git config --local user.email "wtek01@gmail.com"
           git config --local user.name "GitHub Actions Bot"
-          git add k8s/*.yml
+          git add infrastructure/k8s/*.yml
 
           # Tenter de faire un commit et capturer l'erreur éventuelle
           $commitOutput = git commit -m "ci: update k8s manifests with new image versions" 2>&1
