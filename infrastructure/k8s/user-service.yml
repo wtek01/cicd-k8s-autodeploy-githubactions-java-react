@@ -4,6 +4,9 @@ metadata:
   name: user-service
   labels:
     app: user-service
+  annotations:
+    # Added to trigger CI/CD deployment with new Minikube configuration
+    deploy-timestamp: "2025-03-26T19:30:00Z"
 spec:
   replicas: 1
   selector:

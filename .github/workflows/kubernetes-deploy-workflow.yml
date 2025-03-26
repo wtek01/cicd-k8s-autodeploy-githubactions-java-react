@@ -32,8 +32,14 @@ jobs:
           if (!(Test-Path -Path "$HOME/.kube")) {
             New-Item -Path "$HOME/.kube" -ItemType Directory
           }
-          [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.KUBE_CONFIG }}")) | Out-File -FilePath "$HOME/.kube/config" -Encoding utf8
-          # Définir les permissions appropriées
+
+          # Create kubeconfig content with correct line endings
+          $content = "apiVersion: v1`nkind: Config`nclusters:`n- cluster:`n    certificate-authority: C:\Users\gmelk\.minikube\ca.crt`n    server: https://127.0.0.1:59455`n  name: minikube`ncontexts:`n- context:`n    cluster: minikube`n    namespace: default`n    user: minikube`n  name: minikube`ncurrent-context: minikube`npreferences: {}`nusers:`n- name: minikube`n  user:`n    client-certificate: C:\Users\gmelk\.minikube\profiles\minikube\client.crt`n    client-key: C:\Users\gmelk\.minikube\profiles\minikube\client.key"
+
+          # Write to config file
+          $content | Out-File -FilePath "$HOME/.kube/config" -Encoding utf8 -Force
+
+          # Set permissions
           $acl = Get-Acl -Path "$HOME/.kube/config"
           $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule("$env:USERNAME","FullControl","Allow")
           $acl.SetAccessRule($accessRule)
@@ -253,9 +259,7 @@ jobs:
 
           Write-Host "Testing Order Service health endpoint via port-forward..."
           $orderPortForwardJob = Start-Job -ScriptBlock {
-            kubectl port-forward se
-            
-            rvice/order-service 8082:8082 -n microservices
+            kubectl port-forward service/order-service 8082:8082 -n microservices
           }
 
           Start-Sleep -Seconds 5
