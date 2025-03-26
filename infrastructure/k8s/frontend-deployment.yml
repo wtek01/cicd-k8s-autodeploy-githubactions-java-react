@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: wtek01/frontend:0.1.0
+          image: wtek01/frontend:0.3.0
           imagePullPolicy: Always
           envFrom:
             - configMapRef:
