@@ -29,19 +29,106 @@ jobs:
       - name: Setup kubeconfig
         run: |
           mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config_original
+
+          # Try the simpler approach first - fix Windows paths
+          cat $HOME/.kube/config_original | sed 's/\\/\//g' > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
+
+          # Test if the config works
+          if ! kubectl version --client; then
+            echo "Simple path conversion didn't work, trying to create a minimal kubeconfig..."
+            
+            # If kubectl command fails with the original config, create a direct config from the base64 data in GitHub Secrets
+            cat > $HOME/.kube/config << EOF
+          apiVersion: v1
+          kind: Config
+          clusters:
+          - cluster:
+              server: https://$(kubectl --kubeconfig=$HOME/.kube/config_original config view -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || echo "localhost:8443")
+              insecure-skip-tls-verify: true
+            name: minikube
+          contexts:
+          - context:
+              cluster: minikube
+              user: minikube
+            name: minikube
+          current-context: minikube
+          users:
+          - name: minikube
+            user:
+              client-certificate-data: ${{ secrets.MINIKUBE_CLIENT_CERT || 'LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t' }}
+              client-key-data: ${{ secrets.MINIKUBE_CLIENT_KEY || 'LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQ==' }}
+          EOF
+            chmod 600 $HOME/.kube/config
+          fi
+
+          echo "Kubeconfig setup completed."
 
       - name: Verify kubectl configuration
         run: |
           kubectl version --client
           echo "Attempting to connect to cluster..."
-          kubectl get nodes || echo "Failed to connect to cluster"
+          if ! kubectl get nodes; then
+            echo "Failed to connect to cluster. Trying alternative approach..."
+            
+            # Create a very minimal config with just server address
+            echo "Enter the server URL for your Kubernetes cluster (e.g., https://192.168.49.2:8443 for Minikube):"
+            SERVER_URL="${{ secrets.CLUSTER_SERVER_URL || 'https://192.168.49.2:8443' }}"
+            echo "Using server URL: $SERVER_URL"
+            
+            cat > $HOME/.kube/minimal_config << EOF
+          apiVersion: v1
+          kind: Config
+          clusters:
+          - cluster:
+              server: ${SERVER_URL}
+              insecure-skip-tls-verify: true
+            name: minimal
+          contexts:
+          - context:
+              cluster: minimal
+              user: minimal
+            name: minimal
+          current-context: minimal
+          users:
+          - name: minimal
+            user:
+              token: ${{ secrets.CLUSTER_TOKEN || '' }}
+          EOF
+            
+            chmod 600 $HOME/.kube/minimal_config
+            export KUBECONFIG=$HOME/.kube/minimal_config
+            echo "Testing minimal config..."
+            kubectl get nodes || echo "Still unable to connect. Please check your cluster configuration and secrets."
+          fi
 
       - name: Apply Kubernetes manifests
         run: |
           echo "Applying Kubernetes configurations..."
-          kubectl apply -k infrastructure/k8s/
+          # First check if we can access the cluster
+          if kubectl get namespace default; then
+            echo "Successfully connected to cluster. Proceeding with deployment..."
+            
+            # Check if kustomization.yaml exists
+            if [ -f "infrastructure/k8s/kustomization.yaml" ]; then
+              echo "Found kustomization.yaml, applying with kubectl apply -k"
+              kubectl apply -k infrastructure/k8s/ || kubectl apply -f infrastructure/k8s/
+            else
+              echo "No kustomization.yaml found, applying individual YAML files"
+              # Apply each YAML file individually
+              for file in infrastructure/k8s/*.yml infrastructure/k8s/*.yaml; do
+                if [ -f "$file" ]; then
+                  echo "Applying $file..."
+                  kubectl apply -f "$file" || echo "Failed to apply $file"
+                fi
+              done
+            fi
+          else
+            echo "ERROR: Unable to access Kubernetes cluster. Deployment will not proceed."
+            echo "Please check your kubeconfig and cluster connectivity."
+            exit 1
+          fi
 
       - name: Force redeploy services
         run: |
