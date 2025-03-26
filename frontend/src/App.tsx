@@ -22,7 +22,7 @@ function Dashboard() {
         </Link>
       </div>
 
-      {/* Uncomment to show environment debug information test */}
+      {/* Uncomment to show environment debug information */}
       {/* <EnvDebug /> */}
     </div>
   );
