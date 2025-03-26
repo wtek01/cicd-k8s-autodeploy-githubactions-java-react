@@ -159,8 +159,8 @@ jobs:
       - name: Wait for services to stabilize
         shell: powershell
         run: |
-          Write-Host "Waiting for services to stabilize before verification (2 minutes)..."
-          Start-Sleep -Seconds 120
+          Write-Host "Waiting for services to stabilize before verification (4 minutes)..."
+          Start-Sleep -Seconds 240
 
           Write-Host "Checking pod status after waiting period:"
           kubectl get pods -n microservices
