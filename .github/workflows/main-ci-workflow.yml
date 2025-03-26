@@ -135,37 +135,28 @@ jobs:
 
       - name: Extract version from pom.xml
         id: get-version
-        shell: powershell
         run: |
-          $versionLine = Select-String -Path backend/pom.xml -Pattern "<version>(.*?)</version>" | Select-Object -First 1
-          $version = $versionLine -replace ".*<version>(.*?)</version>.*", '$1'
-          $version = $version -replace "[^0-9\.]", ""
-          echo "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          echo "Using version: $version"
+          VERSION=$(grep -m1 "<version>" backend/pom.xml | sed 's/[^0-9\.]//g')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION"
 
       - name: Update Kubernetes manifests
-        shell: powershell
         run: |
-          # Mettre à jour les manifests avec la nouvelle version d'image
-          (Get-Content infrastructure/k8s/user-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/user-service.yml
-          (Get-Content infrastructure/k8s/order-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/order-service.yml
-          (Get-Content infrastructure/k8s/frontend-deployment.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/frontend-deployment.yml
+          # Update manifests with new image versions
+          sed -i "s|image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:${{ steps.get-version.outputs.version }}|g" infrastructure/k8s/user-service.yml
+          sed -i "s|image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:${{ steps.get-version.outputs.version }}|g" infrastructure/k8s/order-service.yml
+          sed -i "s|image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:${{ steps.get-version.outputs.version }}|g" infrastructure/k8s/frontend-deployment.yml
 
       - name: Commit and push updated manifests
-        shell: powershell
         run: |
           git config --local user.email "wtek01@gmail.com"
           git config --local user.name "GitHub Actions Bot"
           git add infrastructure/k8s/*.yml
 
-          # Tenter de faire un commit et capturer l'erreur éventuelle
-          $commitOutput = git commit -m "ci: update k8s manifests with new image versions" 2>&1
-
-          # Ignorer l'erreur si c'est "nothing to commit"
-          if ($commitOutput -match "nothing to commit" -or $LASTEXITCODE -eq 0) {
-              Write-Host "Commit successful or nothing to commit"
-              git push origin main --force
-          } else {
-              Write-Host "Error during commit: $commitOutput"
-              exit 1
-          }
+          # Try to commit and handle the case where there are no changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "ci: update k8s manifests with new image versions"
+            git push origin main --force
+          fi
