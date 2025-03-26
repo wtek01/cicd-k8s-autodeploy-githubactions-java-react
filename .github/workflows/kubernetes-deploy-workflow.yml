@@ -73,13 +73,36 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Forcing redeployment to ensure new images are used..."
-          kubectl rollout restart deployment/user-service
-          kubectl rollout restart deployment/order-service
+          kubectl rollout restart deployment/user-service -n microservices
+          kubectl rollout restart deployment/order-service -n microservices
+
+      - name: Check pod status and logs
+        shell: powershell
+        run: |
+          Write-Host "Waiting for pods to be created..."
+          Start-Sleep -Seconds 30
+
+          Write-Host "Checking pod status..."
+          kubectl get pods -n microservices
+
+          Write-Host "Checking user-service pods..."
+          $userPods = kubectl get pods -n microservices -l app=user-service -o jsonpath='{.items[*].metadata.name}'
+          foreach ($pod in $userPods.Split()) {
+            Write-Host "Logs for $pod:"
+            kubectl logs $pod -n microservices --tail=50
+          }
+
+          Write-Host "Checking order-service pods..."
+          $orderPods = kubectl get pods -n microservices -l app=order-service -o jsonpath='{.items[*].metadata.name}'
+          foreach ($pod in $orderPods.Split()) {
+            Write-Host "Logs for $pod:"
+            kubectl logs $pod -n microservices --tail=50
+          }
 
       - name: Verify deployment
         shell: powershell
         run: |
           Write-Host "Verifying deployments..."
-          kubectl rollout status deployment/user-service --timeout=15m
-          kubectl rollout status deployment/order-service --timeout=15m
+          kubectl rollout status deployment/user-service -n microservices --timeout=5m
+          kubectl rollout status deployment/order-service -n microservices --timeout=5m
           Write-Host "All deployments successfully rolled out!"
