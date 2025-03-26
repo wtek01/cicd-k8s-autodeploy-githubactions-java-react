@@ -98,15 +98,26 @@ jobs:
           kubectl get events -n microservices --sort-by=.metadata.creationTimestamp
 
           Write-Host "Checking if images can be pulled..."
-          kubectl get pods -n microservices -o jsonpath="{..image}" | tr -s '[[:space:]]' '\n' | Sort-Object | Get-Unique | ForEach-Object {
-            Write-Host "Checking image: $_"
-            # Log image pull status (if available)
-            kubectl get pods -n microservices | Select-String -Pattern "ImagePull"
+          $images = kubectl get pods -n microservices -o jsonpath="{..image}"
+          if ($images) {
+            $images.Split(' ') | Select-Object -Unique | ForEach-Object {
+              Write-Host "Checking image: $_"
+            }
+          } else {
+            Write-Host "No images found in pods"
           }
+
+          # Check for ImagePull issues
+          Write-Host "Checking for image pull issues:"
+          kubectl get pods -n microservices | Select-String -Pattern "ImagePull"
 
           Write-Host "Checking Minikube resources..."
           minikube status
-          kubectl top nodes || Write-Host "Metrics server not available"
+          try {
+            kubectl top nodes
+          } catch {
+            Write-Host "Metrics server not available"
+          }
 
       - name: Check pod status and logs
         shell: powershell
