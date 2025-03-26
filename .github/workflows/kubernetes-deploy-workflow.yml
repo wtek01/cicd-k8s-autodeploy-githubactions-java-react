@@ -50,6 +50,12 @@ jobs:
             Write-Host "Failed to connect to cluster"
           }
 
+      - name: Create namespace if not exists
+        shell: powershell
+        run: |
+          Write-Host "Creating microservices namespace if it doesn't exist..."
+          kubectl create namespace microservices --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Apply Kubernetes manifests
         shell: powershell
         run: |
