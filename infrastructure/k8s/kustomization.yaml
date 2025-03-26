@@ -10,9 +10,9 @@ resources:
   - frontend-deployment.yml
   - frontend-config.yml
   - service-monitors.yml
+  - ingress.yml
 
 namespace: microservices
-
 # Add namespace to all resources
-commonLabels:
-  app: microservices
+# commonLabels:
+#   app: microservices
