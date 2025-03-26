@@ -12,39 +12,29 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Ensure PostgreSQL is running
-        shell: pwsh
-        run: |
-          # Check if your local PostgreSQL is running
-          # You might need to adjust this based on your PostgreSQL installation
-          $pgService = Get-Service -Name postgresql* -ErrorAction SilentlyContinue
-          if ($pgService -and $pgService.Status -eq 'Running') {
-            echo "PostgreSQL service is running"
-          } else {
-            echo "WARNING: PostgreSQL service might not be running. Please ensure it is started."
-            # You can try to start it if needed:
-            # Start-Service -Name postgresql-x64-14
-          }
-
       - name: Create databases
-        shell: pwsh
         run: |
-          try {
-            $env:PGPASSWORD = "postgres"
-            psql -h localhost -U postgres -c "DROP DATABASE IF EXISTS userdb;"
-            psql -h localhost -U postgres -c "DROP DATABASE IF EXISTS orderdb;"
-            psql -h localhost -U postgres -c "CREATE DATABASE userdb;"
-            psql -h localhost -U postgres -c "CREATE DATABASE orderdb;"
-            echo "Databases created successfully"
-          } catch {
-            echo "Error creating databases: $_"
-            echo "Continuing with the workflow..."
-          }
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE userdb;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE orderdb;"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v3
@@ -54,7 +44,6 @@ jobs:
           cache: maven
 
       - name: Build and test with Maven
-        shell: pwsh
         run: |
           cd backend
           mvn -B clean verify
@@ -79,7 +68,7 @@ jobs:
 
   build-and-push-images:
     needs: build-and-test
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     strategy:
       matrix:
@@ -88,55 +77,52 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Docker
-        shell: pwsh
-        run: |
-          # Ensure Docker is running
-          docker --version
-          echo "Docker is set up and running"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
       - name: Login to Docker Hub
-        shell: pwsh
-        run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Extract version from pom.xml
-        shell: pwsh
         id: get-version
         run: |
-          $version = Select-String -Path backend/pom.xml -Pattern "<version>(.*?)</version>" | Select-Object -First 1 | ForEach-Object { $_.Matches.Groups[1].Value }
-          $version = $version -replace "[^0-9\.]", ""
-          echo "version=$version" >> $env:GITHUB_OUTPUT
-          echo "Using version: $version"
+          VERSION=$(grep -m1 "<version>" backend/pom.xml | sed 's/[^0-9\.]//g')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION"
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.get-version.outputs.version }}
+            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Set Build Context and Dockerfile Path
-        shell: pwsh
         id: set-context
         run: |
-          $service = "${{ matrix.service }}"
-          if ($service -eq "frontend") {
-            echo "context=frontend" >> $env:GITHUB_OUTPUT
-            echo "dockerfile=frontend/Dockerfile" >> $env:GITHUB_OUTPUT
-          } else {
-            echo "context=backend" >> $env:GITHUB_OUTPUT
-            echo "dockerfile=backend/$service/Dockerfile" >> $env:GITHUB_OUTPUT
-          }
+          if [ "${{ matrix.service }}" == "frontend" ]; then
+            echo "context=frontend" >> $GITHUB_OUTPUT
+            echo "dockerfile=frontend/Dockerfile" >> $GITHUB_OUTPUT
+          else
+            echo "context=backend" >> $GITHUB_OUTPUT
+            echo "dockerfile=backend/${{ matrix.service }}/Dockerfile" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build and push Docker image
-        shell: pwsh
-        run: |
-          $service = "${{ matrix.service }}"
-          $username = "${{ secrets.DOCKERHUB_USERNAME }}"
-          $version = "${{ steps.get-version.outputs.version }}"
-          $context = "${{ steps.set-context.outputs.context }}"
-          $dockerfile = "${{ steps.set-context.outputs.dockerfile }}"
-
-          # Build the Docker image
-          docker build -t "$username/$service:$version" -t "$username/$service:latest" -f "$dockerfile" "$context"
-
-          # Push the images to Docker Hub
-          docker push "$username/$service:$version"
-          docker push "$username/$service:latest"
+        uses: docker/build-push-action@v3
+        with:
+          context: ${{ steps.set-context.outputs.context }}
+          file: ${{ steps.set-context.outputs.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:buildcache,mode=max
 
   update-k8s-manifests:
     needs: build-and-push-images
@@ -148,37 +134,38 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Extract version from pom.xml
-        shell: pwsh
         id: get-version
+        shell: powershell
         run: |
-          $version = Select-String -Path backend/pom.xml -Pattern "<version>(.*?)</version>" | Select-Object -First 1 | ForEach-Object { $_.Matches.Groups[1].Value }
+          $versionLine = Select-String -Path backend/pom.xml -Pattern "<version>(.*?)</version>" | Select-Object -First 1
+          $version = $versionLine -replace ".*<version>(.*?)</version>.*", '$1'
           $version = $version -replace "[^0-9\.]", ""
-          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           echo "Using version: $version"
 
       - name: Update Kubernetes manifests
-        shell: pwsh
+        shell: powershell
         run: |
-          # Update manifests with new image versions
-          $username = "${{ secrets.DOCKERHUB_USERNAME }}"
-          $version = "${{ steps.get-version.outputs.version }}"
-
-          (Get-Content infrastructure/k8s/user-service.yml) -replace "image: $username/user-service:.*", "image: $username/user-service:$version" | Set-Content infrastructure/k8s/user-service.yml
-          (Get-Content infrastructure/k8s/order-service.yml) -replace "image: $username/order-service:.*", "image: $username/order-service:$version" | Set-Content infrastructure/k8s/order-service.yml
-          (Get-Content infrastructure/k8s/frontend-deployment.yml) -replace "image: $username/frontend:.*", "image: $username/frontend:$version" | Set-Content infrastructure/k8s/frontend-deployment.yml
+          # Mettre à jour les manifests avec la nouvelle version d'image
+          (Get-Content infrastructure/k8s/user-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/user-service.yml
+          (Get-Content infrastructure/k8s/order-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/order-service.yml
+          (Get-Content infrastructure/k8s/frontend-deployment.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/frontend-deployment.yml
 
       - name: Commit and push updated manifests
-        shell: pwsh
+        shell: powershell
         run: |
           git config --local user.email "wtek01@gmail.com"
           git config --local user.name "GitHub Actions Bot"
           git add infrastructure/k8s/*.yml
 
-          # Try to commit and handle the case where there are no changes
-          $hasChanges = git diff --staged --quiet
-          if ($LASTEXITCODE -eq 0) {
-            echo "No changes to commit"
+          # Tenter de faire un commit et capturer l'erreur éventuelle
+          $commitOutput = git commit -m "ci: update k8s manifests with new image versions" 2>&1
+
+          # Ignorer l'erreur si c'est "nothing to commit"
+          if ($commitOutput -match "nothing to commit" -or $LASTEXITCODE -eq 0) {
+              Write-Host "Commit successful or nothing to commit"
+              git push origin main --force
           } else {
-            git commit -m "ci: update k8s manifests with new image versions"
-            git push origin main --force
+              Write-Host "Error during commit: $commitOutput"
+              exit 1
           }

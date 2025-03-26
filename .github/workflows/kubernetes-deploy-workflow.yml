@@ -27,115 +27,52 @@ jobs:
         uses: azure/setup-kubectl@v3
 
       - name: Setup kubeconfig
-        shell: pwsh
+        shell: powershell
         run: |
-          New-Item -Path "$HOME/.kube" -ItemType Directory -Force
-
-          # Use the KUBE_CONFIG secret directly
-          echo "${{ secrets.KUBE_CONFIG }}" | Out-File -FilePath "$HOME/.kube/config"
-
-          # Make sure the file permissions are correct
-          echo "Kubeconfig created successfully."
+          if (!(Test-Path -Path "$HOME/.kube")) {
+            New-Item -Path "$HOME/.kube" -ItemType Directory
+          }
+          [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.KUBE_CONFIG }}")) | Out-File -FilePath "$HOME/.kube/config" -Encoding utf8
+          # Définir les permissions appropriées
+          $acl = Get-Acl -Path "$HOME/.kube/config"
+          $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule("$env:USERNAME","FullControl","Allow")
+          $acl.SetAccessRule($accessRule)
+          $acl | Set-Acl -Path "$HOME/.kube/config"
 
       - name: Verify kubectl configuration
-        shell: pwsh
+        shell: powershell
         run: |
           kubectl version --client
-          echo "Checking connection with namespace list..."
-          kubectl get namespaces --insecure-skip-tls-verify || echo "Failed to list namespaces, but continuing with deployment"
-
-      - name: Install kubectl without prompting
-        shell: pwsh
-        run: |
-          # Ensure kubectl won't prompt for input 
-          echo "Setting kubectl flags to avoid prompts..."
-
-          # If KUBE_TOKEN is provided, use it for authentication
-          if ("${{ secrets.KUBE_TOKEN }}" -ne "") {
-            echo "Using provided KUBE_TOKEN for authentication"
-            kubectl config set-credentials minikube --token="${{ secrets.KUBE_TOKEN }}"
+          Write-Host "Attempting to connect to cluster..."
+          try {
+            kubectl get nodes
+          } catch {
+            Write-Host "Failed to connect to cluster"
           }
 
       - name: Apply Kubernetes manifests
-        shell: pwsh
+        shell: powershell
         run: |
-          echo "Applying Kubernetes configurations..."
-
-          # Check if the directory exists first
-          if (Test-Path "infrastructure/k8s") {
-            echo "Found infrastructure/k8s directory, applying manifests..."
-            
-            # Apply each YAML file individually
-            Get-ChildItem -Path "infrastructure/k8s" -Filter "*.yml" | ForEach-Object {
-              echo "Applying $($_.FullName)..."
-              kubectl apply -f $_.FullName --insecure-skip-tls-verify
-            }
-            
-            Get-ChildItem -Path "infrastructure/k8s" -Filter "*.yaml" | ForEach-Object {
-              echo "Applying $($_.FullName)..."
-              kubectl apply -f $_.FullName --insecure-skip-tls-verify
-            }
-          } else {
-            echo "ERROR: infrastructure/k8s directory not found!"
-            dir
-            exit 1
-          }
+          Write-Host "Applying Kubernetes configurations..."
+          #kubectl apply -f infrastructure/k8s/kafka-statefulset.yml
+          #kubectl apply -f infrastructure/k8s/postgres-deployment.yml
+          #kubectl apply -f infrastructure/k8s/user-service.yml
+          #kubectl apply -f infrastructure/k8s/order-service.yml
+          #kubectl apply -f infrastructure/k8s/ingress.yml
+          # Ou utilisez kustomize
+          kubectl apply -k infrastructure/k8s/
 
       - name: Force redeploy services
-        shell: pwsh
+        shell: powershell
         run: |
-          echo "Forcing redeployment to ensure new images are used..."
-
-          # Try to restart the deployments
-          kubectl rollout restart deployment/user-service --insecure-skip-tls-verify
-          kubectl rollout restart deployment/order-service --insecure-skip-tls-verify
-          kubectl rollout restart deployment/frontend --insecure-skip-tls-verify
-
-          echo "Redeployment commands sent. Checking deployment status..."
-          kubectl get deployments --insecure-skip-tls-verify
-
-          echo "Force redeployment step completed."
+          Write-Host "Forcing redeployment to ensure new images are used..."
+          kubectl rollout restart deployment/user-service
+          kubectl rollout restart deployment/order-service
 
       - name: Verify deployment
-        shell: pwsh
+        shell: powershell
         run: |
-          echo "Verifying deployments..."
-
-          kubectl rollout status deployment/user-service --timeout=2m --insecure-skip-tls-verify
-          kubectl rollout status deployment/order-service --timeout=2m --insecure-skip-tls-verify
-          kubectl rollout status deployment/frontend --timeout=2m --insecure-skip-tls-verify
-
-          echo "Checking final deployment status"
-          kubectl get pods --insecure-skip-tls-verify
-
-          echo "Deployment verification completed"
-
-      - name: List deployed resources
-        shell: pwsh
-        run: |
-          echo "Listing all deployed resources for debugging..."
-
-          echo "=== Deployments ==="
-          kubectl get deployments -A --insecure-skip-tls-verify
-
-          echo "=== Services ==="
-          kubectl get services -A --insecure-skip-tls-verify
-
-          echo "=== ConfigMaps ==="
-          kubectl get configmaps -A --insecure-skip-tls-verify
-
-          echo "Deployment resources listed successfully."
-
-      - name: Mark workflow as successful
-        shell: pwsh
-        run: |
-          echo "====================================="
-          echo "🎉 CI/CD PIPELINE COMPLETED SUCCESSFULLY 🎉"
-          echo "====================================="
-          echo "Note: Some kubectl commands might have shown warnings or errors,"
-          echo "but this is expected when connecting to a local Minikube cluster from GitHub Actions."
-          echo "The manifests have been updated and applied to the cluster to the best of our ability."
-          echo "You may need to manually verify the deployment on your local Minikube cluster."
-          echo "====================================="
-          # Force successful exit
-          exit 0
+          Write-Host "Verifying deployments..."
+          kubectl rollout status deployment/user-service --timeout=15m
+          kubectl rollout status deployment/order-service --timeout=15m
+          Write-Host "All deployments successfully rolled out!"
