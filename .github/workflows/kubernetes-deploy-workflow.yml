@@ -73,8 +73,40 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Forcing redeployment to ensure new images are used..."
+
+          # Check for available images in deployments
+          Write-Host "Current images in deployments:"
+          kubectl get deployment/user-service -n microservices -o jsonpath="{..image}" | Write-Host
+          kubectl get deployment/order-service -n microservices -o jsonpath="{..image}" | Write-Host
+
+          # Check resource quotas
+          Write-Host "Checking resource quotas in namespace:"
+          kubectl describe namespace microservices
+
+          # Restart deployments
           kubectl rollout restart deployment/user-service -n microservices
           kubectl rollout restart deployment/order-service -n microservices
+
+          # Wait for restart to begin
+          Write-Host "Waiting for rollout to begin..."
+          Start-Sleep -Seconds 5
+
+      - name: Check deployment events
+        shell: powershell
+        run: |
+          Write-Host "Checking events in microservices namespace..."
+          kubectl get events -n microservices --sort-by=.metadata.creationTimestamp
+
+          Write-Host "Checking if images can be pulled..."
+          kubectl get pods -n microservices -o jsonpath="{..image}" | tr -s '[[:space:]]' '\n' | Sort-Object | Get-Unique | ForEach-Object {
+            Write-Host "Checking image: $_"
+            # Log image pull status (if available)
+            kubectl get pods -n microservices | Select-String -Pattern "ImagePull"
+          }
+
+          Write-Host "Checking Minikube resources..."
+          minikube status
+          kubectl top nodes || Write-Host "Metrics server not available"
 
       - name: Check pod status and logs
         shell: powershell
@@ -111,6 +143,19 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Verifying deployments..."
-          kubectl rollout status deployment/user-service -n microservices --timeout=5m
-          kubectl rollout status deployment/order-service -n microservices --timeout=5m
+
+          # Check deployments details
+          Write-Host "Deployment details:"
+          kubectl describe deployment/user-service -n microservices
+          kubectl describe deployment/order-service -n microservices
+
+          # Check pod details
+          Write-Host "Pod details:"
+          kubectl describe pods -n microservices -l app=user-service
+          kubectl describe pods -n microservices -l app=order-service
+
+          # Increase timeout to 10 minutes to allow more time for rollout
+          Write-Host "Checking deployment status with extended timeout:"
+          kubectl rollout status deployment/user-service -n microservices --timeout=10m
+          kubectl rollout status deployment/order-service -n microservices --timeout=10m
           Write-Host "All deployments successfully rolled out!"
