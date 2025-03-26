@@ -126,7 +126,7 @@ jobs:
 
   update-k8s-manifests:
     needs: build-and-push-images
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     permissions:
       contents: write # Important: donne les permissions d'écriture
     steps:
