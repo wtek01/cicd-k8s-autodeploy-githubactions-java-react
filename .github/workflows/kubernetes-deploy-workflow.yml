@@ -15,7 +15,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name != 'workflow_run' }}
     permissions:
       contents: read
@@ -27,48 +27,22 @@ jobs:
         uses: azure/setup-kubectl@v3
 
       - name: Setup kubeconfig
+        shell: pwsh
         run: |
-          mkdir -p $HOME/.kube
+          New-Item -Path "$HOME/.kube" -ItemType Directory -Force
 
-          # Create a direct kubeconfig that doesn't require interactive authentication
-          echo "Creating a direct kubeconfig..."
-          cat > $HOME/.kube/config << EOF
-          apiVersion: v1
-          kind: Config
-          clusters:
-          - cluster:
-              server: ${{ secrets.CLUSTER_SERVER_URL }}
-              insecure-skip-tls-verify: true
-            name: minikube
-          contexts:
-          - context:
-              cluster: minikube
-              user: minikube
-              namespace: default
-            name: minikube
-          current-context: minikube
-          users:
-          - name: minikube
-            user:
-              username: admin
-              password: admin
-          EOF
+          # Use the KUBE_CONFIG secret directly
+          echo "${{ secrets.KUBE_CONFIG }}" | Out-File -FilePath "$HOME/.kube/config"
 
-          chmod 600 $HOME/.kube/config
-
+          # Make sure the file permissions are correct
           echo "Kubeconfig created successfully."
-          cat $HOME/.kube/config | grep -v password
 
       - name: Verify kubectl configuration
+        shell: pwsh
         run: |
           kubectl version --client
-          echo "Setting up port forwarding to access Minikube API server..."
-
-          # Use direct kubectl commands that don't require interactive authentication
           echo "Checking connection with namespace list..."
-          KUBECTL_COMMAND="kubectl get namespaces --insecure-skip-tls-verify"
-          echo "Running: $KUBECTL_COMMAND"
-          $KUBECTL_COMMAND || echo "Failed to list namespaces, but continuing with deployment"
+          kubectl get namespaces --insecure-skip-tls-verify || echo "Failed to list namespaces, but continuing with deployment"
 
       - name: Install kubectl without prompting
         run: |
@@ -83,45 +57,39 @@ jobs:
           fi
 
       - name: Apply Kubernetes manifests
+        shell: pwsh
         run: |
           echo "Applying Kubernetes configurations..."
-          # Force non-interactive mode 
-          export KUBECONFIG=$HOME/.kube/config
 
           # Check if the directory exists first
-          if [ -d "infrastructure/k8s" ]; then
-            echo "Found k8s directory, applying manifests..."
+          if (Test-Path "infrastructure/k8s") {
+            echo "Found infrastructure/k8s directory, applying manifests..."
             
-            # Apply each YAML file individually without requiring authentication
-            for file in infrastructure/k8s/*.yml infrastructure/k8s/*.yaml; do
-              if [ -f "$file" ]; then
-                echo "Applying $file..."
-                kubectl apply -f "$file" --insecure-skip-tls-verify || echo "Failed to apply $file but continuing"
-              fi
-            done
+            # Apply each YAML file individually
+            Get-ChildItem -Path "infrastructure/k8s" -Filter "*.yml" | ForEach-Object {
+              echo "Applying $($_.FullName)..."
+              kubectl apply -f $_.FullName --insecure-skip-tls-verify
+            }
             
-            # Try with kustomize as fallback
-            if [ -f "infrastructure/k8s/kustomization.yaml" ]; then
-              echo "Applying with kustomize..."
-              kubectl apply -k infrastructure/k8s/ --insecure-skip-tls-verify || echo "Failed to apply with kustomize"
-            fi
-          else
+            Get-ChildItem -Path "infrastructure/k8s" -Filter "*.yaml" | ForEach-Object {
+              echo "Applying $($_.FullName)..."
+              kubectl apply -f $_.FullName --insecure-skip-tls-verify
+            }
+          } else {
             echo "ERROR: infrastructure/k8s directory not found!"
-            pwd
-            ls -la
+            dir
             exit 1
-          fi
+          }
 
       - name: Force redeploy services
+        shell: pwsh
         run: |
           echo "Forcing redeployment to ensure new images are used..."
-          # Continue even if some steps fail
-          set +e
 
           # Try to restart the deployments
-          kubectl rollout restart deployment/user-service --insecure-skip-tls-verify || true
-          kubectl rollout restart deployment/order-service --insecure-skip-tls-verify || true
-          kubectl rollout restart deployment/frontend --insecure-skip-tls-verify || true
+          kubectl rollout restart deployment/user-service --insecure-skip-tls-verify
+          kubectl rollout restart deployment/order-service --insecure-skip-tls-verify
+          kubectl rollout restart deployment/frontend --insecure-skip-tls-verify
 
           echo "Redeployment commands sent. Checking deployment status..."
           kubectl get deployments --insecure-skip-tls-verify
@@ -129,37 +97,37 @@ jobs:
           echo "Force redeployment step completed."
 
       - name: Verify deployment
+        shell: pwsh
         run: |
           echo "Verifying deployments..."
-          set +e
 
-          # Add short timeout to avoid hanging
-          kubectl rollout status deployment/user-service --timeout=2m --insecure-skip-tls-verify || true
-          kubectl rollout status deployment/order-service --timeout=2m --insecure-skip-tls-verify || true
-          kubectl rollout status deployment/frontend --timeout=2m --insecure-skip-tls-verify || true
+          kubectl rollout status deployment/user-service --timeout=2m --insecure-skip-tls-verify
+          kubectl rollout status deployment/order-service --timeout=2m --insecure-skip-tls-verify
+          kubectl rollout status deployment/frontend --timeout=2m --insecure-skip-tls-verify
 
           echo "Checking final deployment status"
-          kubectl get pods --insecure-skip-tls-verify || true
+          kubectl get pods --insecure-skip-tls-verify
 
           echo "Deployment verification completed"
 
       - name: List deployed resources
+        shell: pwsh
         run: |
           echo "Listing all deployed resources for debugging..."
-          set +e
 
           echo "=== Deployments ==="
-          kubectl get deployments -A --insecure-skip-tls-verify || true
+          kubectl get deployments -A --insecure-skip-tls-verify
 
           echo "=== Services ==="
-          kubectl get services -A --insecure-skip-tls-verify || true
+          kubectl get services -A --insecure-skip-tls-verify
 
           echo "=== ConfigMaps ==="
-          kubectl get configmaps -A --insecure-skip-tls-verify || true
+          kubectl get configmaps -A --insecure-skip-tls-verify
 
           echo "Deployment resources listed successfully."
 
       - name: Mark workflow as successful
+        shell: pwsh
         run: |
           echo "====================================="
           echo "🎉 CI/CD PIPELINE COMPLETED SUCCESSFULLY 🎉"
