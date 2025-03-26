@@ -86,17 +86,25 @@ jobs:
           kubectl get pods -n microservices
 
           Write-Host "Checking user-service pods..."
-          $userPods = kubectl get pods -n microservices -l app=user-service -o jsonpath='{.items[*].metadata.name}'
-          foreach ($pod in $userPods.Split()) {
-            Write-Host "Logs for $pod:"
-            kubectl logs $pod -n microservices --tail=50
+          $userPods = kubectl get pods -n microservices -l app=user-service -o jsonpath="{.items[*].metadata.name}"
+          if ($userPods) {
+            foreach ($pod in $userPods.Split()) {
+              Write-Host "Logs for ${pod}:"
+              kubectl logs ${pod} -n microservices --tail=50
+            }
+          } else {
+            Write-Host "No user-service pods found"
           }
 
           Write-Host "Checking order-service pods..."
-          $orderPods = kubectl get pods -n microservices -l app=order-service -o jsonpath='{.items[*].metadata.name}'
-          foreach ($pod in $orderPods.Split()) {
-            Write-Host "Logs for $pod:"
-            kubectl logs $pod -n microservices --tail=50
+          $orderPods = kubectl get pods -n microservices -l app=order-service -o jsonpath="{.items[*].metadata.name}"
+          if ($orderPods) {
+            foreach ($pod in $orderPods.Split()) {
+              Write-Host "Logs for ${pod}:"
+              kubectl logs ${pod} -n microservices --tail=50
+            }
+          } else {
+            Write-Host "No order-service pods found"
           }
 
       - name: Verify deployment
