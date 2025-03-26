@@ -253,7 +253,9 @@ jobs:
 
           Write-Host "Testing Order Service health endpoint via port-forward..."
           $orderPortForwardJob = Start-Job -ScriptBlock {
-            kubectl port-forward service/order-service 8082:8082 -n microservices
+            kubectl port-forward se
+            
+            rvice/order-service 8082:8082 -n microservices
           }
 
           Start-Sleep -Seconds 5
