@@ -159,8 +159,8 @@ jobs:
       - name: Wait for services to stabilize
         shell: powershell
         run: |
-          Write-Host "Waiting for services to stabilize before verification (4 minutes)..."
-          Start-Sleep -Seconds 240
+          Write-Host "Waiting for services to stabilize before verification (6 minutes)..."
+          Start-Sleep -Seconds 360
 
           Write-Host "Checking pod status after waiting period:"
           kubectl get pods -n microservices
@@ -168,6 +168,20 @@ jobs:
           # Get pod creation timestamp and current time
           Write-Host "Pod ages:"
           kubectl get pods -n microservices -o custom-columns=NAME:.metadata.name,CREATED:.metadata.creationTimestamp
+
+          # Display pod logs for diagnostics
+          Write-Host "Checking service logs:"
+          Write-Host "User Service Logs:"
+          $userPod = kubectl get pods -n microservices -l app=user-service -o jsonpath="{.items[0].metadata.name}"
+          if ($userPod) {
+            kubectl logs -n microservices $userPod --tail=50
+          }
+
+          Write-Host "Order Service Logs:"
+          $orderPod = kubectl get pods -n microservices -l app=order-service -o jsonpath="{.items[0].metadata.name}"
+          if ($orderPod) {
+            kubectl logs -n microservices $orderPod --tail=50
+          }
 
       - name: Verify deployment
         shell: powershell
