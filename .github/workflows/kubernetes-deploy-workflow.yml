@@ -55,18 +55,19 @@ jobs:
         run: |
           Write-Host "Creating microservices namespace if it doesn't exist..."
           kubectl create namespace microservices --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Apply Kubernetes manifests
         shell: powershell
         run: |
           Write-Host "Applying Kubernetes configurations..."
-          #kubectl apply -f infrastructure/k8s/kafka-statefulset.yml
-          #kubectl apply -f infrastructure/k8s/postgres-deployment.yml
-          #kubectl apply -f infrastructure/k8s/user-service.yml
-          #kubectl apply -f infrastructure/k8s/order-service.yml
-          #kubectl apply -f infrastructure/k8s/ingress.yml
-          # Ou utilisez kustomize
+          # First apply the main microservices resources
           kubectl apply -k infrastructure/k8s/
+
+          # Then apply ingress resources in their proper namespaces
+          Write-Host "Applying ingress configurations..."
+          kubectl apply -f infrastructure/k8s/ingress.yml -n default
+          kubectl apply -f infrastructure/k8s/monitoring-ingress.yml -n monitoring
 
       - name: Force redeploy services
         shell: powershell

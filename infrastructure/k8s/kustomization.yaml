@@ -9,8 +9,10 @@ resources:
   - order-service.yml
   - frontend-deployment.yml
   - frontend-config.yml
-  - ingress.yml
   - service-monitors.yml
-  - monitoring-ingress.yml
 
 namespace: microservices
+
+# Add namespace to all resources
+commonLabels:
+  app: microservices
