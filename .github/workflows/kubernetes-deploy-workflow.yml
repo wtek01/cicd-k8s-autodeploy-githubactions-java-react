@@ -45,16 +45,16 @@ jobs:
           kubectl get namespaces --insecure-skip-tls-verify || echo "Failed to list namespaces, but continuing with deployment"
 
       - name: Install kubectl without prompting
+        shell: pwsh
         run: |
-          # Ensure kubectl won't prompt for input
+          # Ensure kubectl won't prompt for input 
           echo "Setting kubectl flags to avoid prompts..."
-          alias kubectl="kubectl --insecure-skip-tls-verify"
 
-          # Create alternative authentication methods if needed
-          if [ ! -z "${{ secrets.KUBE_TOKEN }}" ]; then
+          # If KUBE_TOKEN is provided, use it for authentication
+          if ("${{ secrets.KUBE_TOKEN }}" -ne "") {
             echo "Using provided KUBE_TOKEN for authentication"
             kubectl config set-credentials minikube --token="${{ secrets.KUBE_TOKEN }}"
-          fi
+          }
 
       - name: Apply Kubernetes manifests
         shell: pwsh

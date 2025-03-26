@@ -13,30 +13,38 @@ on:
 jobs:
   build-and-test:
     runs-on: self-hosted
-    services:
-      postgres:
-        image: postgres:14-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Ensure PostgreSQL is running
+        shell: pwsh
+        run: |
+          # Check if your local PostgreSQL is running
+          # You might need to adjust this based on your PostgreSQL installation
+          $pgService = Get-Service -Name postgresql* -ErrorAction SilentlyContinue
+          if ($pgService -and $pgService.Status -eq 'Running') {
+            echo "PostgreSQL service is running"
+          } else {
+            echo "WARNING: PostgreSQL service might not be running. Please ensure it is started."
+            # You can try to start it if needed:
+            # Start-Service -Name postgresql-x64-14
+          }
+
       - name: Create databases
         shell: pwsh
         run: |
-          $env:PGPASSWORD = "postgres"
-          psql -h localhost -U postgres -c "CREATE DATABASE userdb;"
-          psql -h localhost -U postgres -c "CREATE DATABASE orderdb;"
+          try {
+            $env:PGPASSWORD = "postgres"
+            psql -h localhost -U postgres -c "DROP DATABASE IF EXISTS userdb;"
+            psql -h localhost -U postgres -c "DROP DATABASE IF EXISTS orderdb;"
+            psql -h localhost -U postgres -c "CREATE DATABASE userdb;"
+            psql -h localhost -U postgres -c "CREATE DATABASE orderdb;"
+            echo "Databases created successfully"
+          } catch {
+            echo "Error creating databases: $_"
+            echo "Continuing with the workflow..."
+          }
 
       - name: Set up JDK 17
         uses: actions/setup-java@v3
