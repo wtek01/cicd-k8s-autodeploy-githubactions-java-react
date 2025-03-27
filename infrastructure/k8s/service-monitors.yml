@@ -4,18 +4,19 @@ metadata:
   name: user-service-monitor
   namespace: monitoring
   labels:
-    release: monitoring
+    release: prometheus
 spec:
-  namespaceSelector:
-    matchNames:
-      - default
   selector:
     matchLabels:
       app: user-service
+  namespaceSelector:
+    matchNames:
+      - microservices
   endpoints:
     - port: http
       path: /actuator/prometheus
       interval: 15s
+      scrapeTimeout: 14s
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -23,15 +24,16 @@ metadata:
   name: order-service-monitor
   namespace: monitoring
   labels:
-    release: monitoring
+    release: prometheus
 spec:
-  namespaceSelector:
-    matchNames:
-      - default
   selector:
     matchLabels:
       app: order-service
+  namespaceSelector:
+    matchNames:
+      - microservices
   endpoints:
     - port: http
       path: /actuator/prometheus
       interval: 15s
+      scrapeTimeout: 14s

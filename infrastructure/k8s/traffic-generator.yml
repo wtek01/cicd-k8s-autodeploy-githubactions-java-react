@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: traffic-generator
+  namespace: microservices
+spec:
+  template:
+    spec:
+      containers:
+        - name: traffic-generator
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # Générer du trafic vers le service utilisateur
+              echo "Génération de trafic vers le service utilisateur..."
+              for i in {1..300}; do
+                curl -s http://user-service:8081/actuator/health || echo "Erreur de connexion au service utilisateur"
+                sleep 2
+                curl -s http://order-service:8082/actuator/health || echo "Erreur de connexion au service de commande"
+                sleep 2
+              done
+              echo "Génération de trafic terminée."
+      restartPolicy: Never
+  backoffLimit: 0

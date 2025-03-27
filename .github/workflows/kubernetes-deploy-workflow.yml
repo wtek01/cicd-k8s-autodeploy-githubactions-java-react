@@ -134,11 +134,66 @@ jobs:
           kubectl apply -f infrastructure/k8s/frontend.yml --namespace=microservices
           kubectl apply -f infrastructure/k8s/ingress.yml --namespace=microservices
 
-          # Ignorer les fichiers de monitoring et kustomization qui causent des erreurs
-          Write-Host "Skipping monitoring and kustomization resources that require CRDs..."
-
           Write-Host "Waiting for infrastructure to be ready..."
           Start-Sleep -Seconds 60
+
+      - name: Install Prometheus Operator (optional - for monitoring)
+        shell: powershell
+        run: |
+          Write-Host "Installing Prometheus Operator for monitoring capabilities..."
+
+          # Créer un namespace pour le monitoring s'il n'existe pas
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+          # Installer Prometheus Operator via Helm (si vous avez Helm configuré)
+          try {
+            # Vérifier si Helm est installé
+            $helmInstalled = $null
+            try { $helmInstalled = helm version } catch { }
+            
+            if ($helmInstalled) {
+              Write-Host "Installing Prometheus using Helm..."
+              helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+              helm repo update
+              helm install prometheus prometheus-community/kube-prometheus-stack --namespace monitoring
+              
+              Write-Host "Waiting for Prometheus Operator CRDs to be ready..."
+              Start-Sleep -Seconds 60
+              
+              # Appliquer nos fichiers de configuration de monitoring personnalisés
+              Write-Host "Applying custom monitoring configurations..."
+              if (Test-Path infrastructure/k8s/monitoring-ingress.yml) {
+                kubectl apply -f infrastructure/k8s/monitoring-ingress.yml
+              }
+              
+              if (Test-Path infrastructure/k8s/prometheus-alerts.yml) {
+                kubectl apply -f infrastructure/k8s/prometheus-alerts.yml
+              }
+              
+              if (Test-Path infrastructure/k8s/grafana-dashboard-cm.yml) {
+                kubectl apply -f infrastructure/k8s/grafana-dashboard-cm.yml
+              }
+              
+              # Maintenant nous pouvons appliquer les ServiceMonitors qui étaient exclus
+              if (Test-Path infrastructure/k8s/service-monitors.yml) {
+                Write-Host "Applying service monitors..."
+                kubectl apply -f infrastructure/k8s/service-monitors.yml -n monitoring
+              }
+              
+              if (Test-Path infrastructure/k8s/kustomization.yaml) {
+                Write-Host "Applying kustomization..."
+                kubectl apply -f infrastructure/k8s/kustomization.yaml
+              }
+              
+              Write-Host "Monitoring setup complete."
+            } else {
+              Write-Host "Helm not found, skipping Prometheus installation."
+              Write-Host "To monitor your app, please install Prometheus Operator manually."
+            }
+          } catch {
+            Write-Host "Error installing Prometheus: $_"
+            Write-Host "Continuing without monitoring capabilities."
+          }
 
       - name: Force redeploy services
         shell: powershell

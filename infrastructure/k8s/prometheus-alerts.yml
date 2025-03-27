@@ -1,0 +1,47 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: microservices-alerts
+  namespace: monitoring
+  labels:
+    app: prometheus-operator
+    release: prometheus # Assurez-vous que ce label correspond à votre installation
+spec:
+  groups:
+    - name: microservices.rules
+      rules:
+        - alert: ServiceDown
+          expr: up{namespace="microservices"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Service down: {{ $labels.pod }}"
+            description: "Le service {{ $labels.pod }} dans l'espace de noms microservices est indisponible depuis > 1 minute."
+
+        - alert: HighCPUUsage
+          expr: sum(container_cpu_usage_seconds_total{namespace="microservices"}) by (pod) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Utilisation CPU élevée: {{ $labels.pod }}"
+            description: "Le pod {{ $labels.pod }} a une utilisation CPU > 80% depuis 5 minutes."
+
+        - alert: HighMemoryUsage
+          expr: sum(container_memory_usage_bytes{namespace="microservices"}) by (pod) / sum(container_spec_memory_limit_bytes{namespace="microservices"}) by (pod) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Utilisation mémoire élevée: {{ $labels.pod }}"
+            description: "Le pod {{ $labels.pod }} a une utilisation de mémoire > 80% depuis 5 minutes."
+
+        - alert: SlowHTTPResponses
+          expr: histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{namespace="microservices"}[5m])) by (le, service)) > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Réponses HTTP lentes: {{ $labels.service }}"
+            description: "95% des requêtes sur {{ $labels.service }} sont plus lentes que 1 seconde."

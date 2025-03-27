@@ -4,27 +4,26 @@ metadata:
   name: monitoring-ingress
   namespace: monitoring
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
 spec:
-  ingressClassName: nginx
   rules:
-    - host: grafana.microservices.local
+    - host: monitoring.minikube.local # Utilisez votre propre domaine ou IP
       http:
         paths:
-          - path: /
+          - path: /prometheus(/|$)(.*)
             pathType: Prefix
             backend:
               service:
-                name: monitoring-grafana
-                port:
-                  number: 80
-    - host: prometheus.microservices.local
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: monitoring-kube-prometheus-prometheus
+                name: prometheus-server
                 port:
                   number: 9090
+          - path: /grafana(/|$)(.*)
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus-grafana
+                port:
+                  number: 80
+---
+# Ajouter une entrée au fichier hosts (à faire manuellement)
+# 127.0.0.1 monitoring.minikube.local
