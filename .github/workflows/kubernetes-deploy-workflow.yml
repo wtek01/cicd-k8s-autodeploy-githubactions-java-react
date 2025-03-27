@@ -125,15 +125,17 @@ jobs:
         run: |
           Write-Host "Applying Kubernetes manifests..."
 
-          # Appliquer tous les manifestes avec le compte utilisateur standard (qui a maintenant les permissions)
-          kubectl apply -f infrastructure/k8s/ --namespace=microservices
+          # Appliquer les services principaux en excluant les manifestes problématiques
+          kubectl apply -f infrastructure/k8s/user-service.yml --namespace=microservices
+          kubectl apply -f infrastructure/k8s/order-service.yml --namespace=microservices
+          kubectl apply -f infrastructure/k8s/postgres.yml --namespace=microservices
+          kubectl apply -f infrastructure/k8s/kafka.yml --namespace=microservices
+          kubectl apply -f infrastructure/k8s/zookeeper.yml --namespace=microservices
+          kubectl apply -f infrastructure/k8s/frontend.yml --namespace=microservices
+          kubectl apply -f infrastructure/k8s/ingress.yml --namespace=microservices
 
-          if (Test-Path frontend/k8s/) {
-            Write-Host "Deploying frontend..."
-            kubectl apply -f frontend/k8s/ --namespace=microservices
-          } else {
-            Write-Host "No frontend manifests found, skipping."
-          }
+          # Ignorer les fichiers de monitoring et kustomization qui causent des erreurs
+          Write-Host "Skipping monitoring and kustomization resources that require CRDs..."
 
           Write-Host "Waiting for infrastructure to be ready..."
           Start-Sleep -Seconds 60
