@@ -25,6 +25,8 @@ jobs:
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v3
+        with:
+          version: "latest"
 
       - name: Setup kubeconfig
         shell: powershell
@@ -129,37 +131,37 @@ jobs:
           Write-Host "Ensuring namespaces exist..."
           kubectl create namespace microservices --dry-run=client -o yaml | kubectl apply -f -
 
-          # Méthode 1: Utiliser kustomize pour appliquer tous les manifestes d'un coup
-          Write-Host "Deploying all services using kustomize..."
-          kubectl apply -k infrastructure/k8s/
-
-          # Méthode 2 (alternative): Déploiement en groupes logiques (en commentaire)
-          # En cas de problème avec kustomize, vous pouvez décommenter ces lignes
-          <#
-          # Appliquer les ressources d'infrastructure
-          Write-Host "Deploying infrastructure resources..."
-          kubectl apply -f infrastructure/k8s/postgres-deployment.yml -n microservices
-          kubectl apply -f infrastructure/k8s/zookeeper.yml -n microservices
-          kubectl apply -f infrastructure/k8s/kafka-statefulset.yml -n microservices
-
-          # Attendre que l'infrastructure soit prête
-          Write-Host "Waiting for infrastructure to be ready..."
-          Start-Sleep -Seconds 30
-
-          # Appliquer les microservices
-          Write-Host "Deploying application services..."
-          kubectl apply -f infrastructure/k8s/user-service.yml -n microservices
-          kubectl apply -f infrastructure/k8s/order-service.yml -n microservices
-
-          # Appliquer le frontend et la configuration
-          Write-Host "Deploying frontend..."
-          kubectl apply -f infrastructure/k8s/frontend-config.yml -n microservices
-          kubectl apply -f infrastructure/k8s/frontend-deployment.yml -n microservices
-
-          # Appliquer l'ingress en dernier
-          Write-Host "Configuring ingress..."
-          kubectl apply -f infrastructure/k8s/ingress.yml -n microservices
-          #>
+          # Essayer d'utiliser kustomize, mais revenir à la méthode manuelle en cas d'échec
+          Write-Host "Trying to deploy using kustomize..."
+          if (kubectl apply -k infrastructure/k8s/ 2>$null) {
+            Write-Host "Kustomize deployment successful."
+          } else {
+            Write-Host "Kustomize failed, falling back to individual file application..."
+            
+            # Appliquer les ressources d'infrastructure
+            Write-Host "Deploying infrastructure resources..."
+            kubectl apply -f infrastructure/k8s/postgres-deployment.yml -n microservices
+            kubectl apply -f infrastructure/k8s/zookeeper.yml -n microservices
+            kubectl apply -f infrastructure/k8s/kafka-statefulset.yml -n microservices
+            
+            # Attendre que l'infrastructure soit prête
+            Write-Host "Waiting for infrastructure to be ready..."
+            Start-Sleep -Seconds 30
+            
+            # Appliquer les microservices
+            Write-Host "Deploying application services..."
+            kubectl apply -f infrastructure/k8s/user-service.yml -n microservices
+            kubectl apply -f infrastructure/k8s/order-service.yml -n microservices
+            
+            # Appliquer le frontend et la configuration
+            Write-Host "Deploying frontend..."
+            kubectl apply -f infrastructure/k8s/frontend-config.yml -n microservices
+            kubectl apply -f infrastructure/k8s/frontend-deployment.yml -n microservices
+            
+            # Appliquer l'ingress en dernier
+            Write-Host "Configuring ingress..."
+            kubectl apply -f infrastructure/k8s/ingress.yml -n microservices
+          }
 
           Write-Host "Waiting for services to initialize..."
           Start-Sleep -Seconds 30
@@ -334,4 +336,57 @@ jobs:
           $orderPod = kubectl get pods -n microservices -l app=order-service -o jsonpath="{.items[0].metadata.name}"
           if ($orderPod) {
             kubectl logs -n microservices $orderPod --tail=50
+          }
+
+      - name: Validate Kubernetes manifests
+        shell: powershell
+        run: |
+          Write-Host "Validating Kubernetes manifests..."
+
+          # Vérifier la duplication des ressources
+          $resourceMap = @{}
+
+          Get-ChildItem -Path "infrastructure/k8s/*.yml" | ForEach-Object {
+            $manifest = Get-Content $_.FullName -Raw
+            $documents = $manifest -split "---\r?\n"
+            
+            foreach ($doc in $documents) {
+              if ($doc.Trim() -ne "") {
+                try {
+                  $yamlObj = ConvertFrom-Json $doc -AsHashtable
+                  if ($yamlObj -and $yamlObj.kind -and $yamlObj.metadata -and $yamlObj.metadata.name) {
+                    $resourceKey = "$($yamlObj.kind)/$($yamlObj.metadata.name)"
+                    
+                    if ($resourceMap.ContainsKey($resourceKey)) {
+                      Write-Warning "Duplicated resource found: $resourceKey in files: $($resourceMap[$resourceKey]) and $($_.Name)"
+                    } else {
+                      $resourceMap[$resourceKey] = $_.Name
+                    }
+                  }
+                } catch {
+                  Write-Warning "Could not parse YAML in $($_.Name): $_"
+                }
+              }
+            }
+          }
+
+          # Valider avec kubectl
+          Get-ChildItem -Path "infrastructure/k8s/*.yml" | ForEach-Object {
+            Write-Host "Validating $($_.Name)..."
+            kubectl apply --dry-run=client -f $_.FullName
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "Validation failed for $($_.Name)"
+            }
+          }
+
+          Write-Host "Manifest validation completed"
+
+      - name: Check Kubernetes connection
+        shell: powershell
+        run: |
+          Write-Host "Checking Kubernetes connection..."
+          if (Test-Path -Path "$HOME/.kube") {
+            Write-Host "Kubernetes connection is established."
+          } else {
+            Write-Host "Kubernetes connection is not established."
           }

@@ -14,7 +14,11 @@ resources:
   # Les fichiers de monitoring sont maintenant dans le répertoire monitoring/
   # - monitoring/service-monitors.yml
 
-namespace: microservices
-# Add namespace to all resources
-commonLabels:
-  app.kubernetes.io/part-of: microservices
+# Ne pas spécifier de namespace ici car les manifestes ont déjà leur namespace défini
+# namespace: microservices
+
+# Utiliser labels au lieu de commonLabels pour éviter l'avertissement de dépréciation
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: microservices
