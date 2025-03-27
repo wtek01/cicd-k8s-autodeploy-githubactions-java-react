@@ -6,19 +6,25 @@
 # 3. Starts nginx
 set -e
 
+# Log environment for debugging
+echo "Current environment: $ENVIRONMENT"
+echo "API URL: $API_URL"
+echo "User Service URL: $USER_SERVICE_URL"
+echo "Order Service URL: $ORDER_SERVICE_URL"
+
 # Generate the runtime configuration based on environment variables
 # Default values are provided if environment variables are not set
 cat <<EOF > /usr/share/nginx/html/config.js
 window.__ENV = {
   // URLs for service communication
-  API_URL: "${API_URL:-http://localhost}",
-  USER_SERVICE_URL: "${USER_SERVICE_URL:-http://localhost:8081}",
-  ORDER_SERVICE_URL: "${ORDER_SERVICE_URL:-http://localhost:8082}",
-  FRONTEND_URL: "${FRONTEND_URL:-http://docker.frontend.com}",
+  API_URL: "${API_URL}",
+  USER_SERVICE_URL: "${USER_SERVICE_URL}",
+  ORDER_SERVICE_URL: "${ORDER_SERVICE_URL}",
+  FRONTEND_URL: "${FRONTEND_URL}",
   
   // Environment information
-  ENVIRONMENT: "${ENVIRONMENT:-docker}",
-  VERSION: "${VERSION:-1.0.0}"
+  ENVIRONMENT: "${ENVIRONMENT}",
+  VERSION: "${VERSION}"
 };
 console.log('Runtime configuration loaded:', window.__ENV);
 EOF

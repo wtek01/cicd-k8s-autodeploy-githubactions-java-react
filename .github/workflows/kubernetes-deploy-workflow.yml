@@ -13,6 +13,15 @@ on:
       - completed
     branches: [main, master]
 
+env:
+  REGISTRY: docker.io
+  FRONTEND_IMAGE_NAME: wtek01/frontend
+  FRONTEND_IMAGE_TAG: 0.3.1
+  USER_SERVICE_IMAGE_NAME: wtek01/user-service
+  USER_SERVICE_IMAGE_TAG: 0.3.0
+  ORDER_SERVICE_IMAGE_NAME: wtek01/order-service
+  ORDER_SERVICE_IMAGE_TAG: 0.3.0
+
 jobs:
   deploy:
     runs-on: self-hosted
@@ -399,3 +408,29 @@ jobs:
           } else {
             Write-Host "Kubernetes connection is not established."
           }
+
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ env.FRONTEND_IMAGE_NAME }}:${{ env.FRONTEND_IMAGE_TAG }}
+          build-args: |
+            VITE_ENVIRONMENT=kubernetes
+            VITE_API_BASE_URL=http://api.microservices.local
+            VITE_USER_SERVICE_URL=http://api.microservices.local/users
+            VITE_ORDER_SERVICE_URL=http://api.microservices.local/orders

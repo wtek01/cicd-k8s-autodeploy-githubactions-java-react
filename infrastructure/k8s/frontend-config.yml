@@ -5,7 +5,16 @@ metadata:
   labels:
     app: frontend
 data:
-  VITE_API_BASE_URL: ""
+  # Build-time Vite environment variables
+  VITE_API_BASE_URL: "http://api.microservices.local"
   VITE_USER_SERVICE_URL: "http://api.microservices.local/users"
   VITE_ORDER_SERVICE_URL: "http://api.microservices.local/orders"
   VITE_ENVIRONMENT: "kubernetes"
+
+  # Runtime environment variables (for docker-entrypoint.sh)
+  API_URL: "http://api.microservices.local"
+  USER_SERVICE_URL: "http://api.microservices.local/users"
+  ORDER_SERVICE_URL: "http://api.microservices.local/orders"
+  FRONTEND_URL: "http://app.microservices.local"
+  ENVIRONMENT: "kubernetes"
+  VERSION: "1.0.0"

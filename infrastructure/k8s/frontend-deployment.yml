@@ -14,14 +14,42 @@ spec:
     metadata:
       labels:
         app: frontend
+      annotations:
+        checksum/config: "${CONFIG_CHECKSUM}" # This will force a pod restart when config changes
     spec:
       containers:
         - name: frontend
-          image: wtek01/frontend:0.3.0
+          image: wtek01/frontend:0.3.1
           imagePullPolicy: Always
           envFrom:
             - configMapRef:
                 name: frontend-config
+          env:
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: ENVIRONMENT
+            - name: API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: API_URL
+            - name: USER_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: USER_SERVICE_URL
+            - name: ORDER_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: ORDER_SERVICE_URL
+            - name: FRONTEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: FRONTEND_URL
           ports:
             - containerPort: 80
           resources:

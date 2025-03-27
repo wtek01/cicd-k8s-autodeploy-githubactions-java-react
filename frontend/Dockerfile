@@ -8,7 +8,7 @@ WORKDIR /app
 ARG VITE_API_BASE_URL=http://localhost
 ARG VITE_USER_SERVICE_URL=http://localhost:8081
 ARG VITE_ORDER_SERVICE_URL=http://localhost:8082
-ARG VITE_ENVIRONMENT=docker
+ARG VITE_ENVIRONMENT=development
 
 # Make the build arguments available as environment variables
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
@@ -45,11 +45,6 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # Copy entrypoint script
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
-
-# Set default environment variables
-ENV API_URL=http://localhost
-ENV ENVIRONMENT=docker
-ENV VERSION=1.0.0
 
 # Expose port 80
 EXPOSE 80
