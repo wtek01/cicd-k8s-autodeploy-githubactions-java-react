@@ -5,27 +5,14 @@ import developmentConfig from "./environments/development";
 import dockerConfig from "./environments/docker";
 import kubernetesConfig from "./environments/kubernetes";
 import productionConfig from "./environments/production";
-
-type Environment = "development" | "production" | "docker" | "kubernetes";
+import type { Environment, RuntimeConfig } from "./types";
 
 // Read configuration from import.meta.env (Vite's environment variables)
 const env = import.meta.env;
 
 // Runtime configuration from window.__ENV (injected by docker-entrypoint.sh)
-const runtimeConfig =
-  typeof window !== "undefined" && window.__ENV
-    ? {
-        USER_SERVICE_URL: window.__ENV.USER_SERVICE_URL,
-        ORDER_SERVICE_URL: window.__ENV.ORDER_SERVICE_URL,
-        FRONTEND_URL: window.__ENV.FRONTEND_URL,
-        ENVIRONMENT: window.__ENV.ENVIRONMENT as Environment | undefined,
-      }
-    : {
-        USER_SERVICE_URL: undefined as string | undefined,
-        ORDER_SERVICE_URL: undefined as string | undefined,
-        FRONTEND_URL: undefined as string | undefined,
-        ENVIRONMENT: undefined as Environment | undefined,
-      };
+const runtimeConfig: RuntimeConfig =
+  typeof window !== "undefined" && window.__ENV ? window.__ENV : {};
 
 interface Config {
   // Service URLs
@@ -42,8 +29,8 @@ interface Config {
 }
 
 // Determine current environment
-const currentEnv = (runtimeConfig.ENVIRONMENT ||
-  env.VITE_ENVIRONMENT ||
+const currentEnv = (env.VITE_ENVIRONMENT ||
+  runtimeConfig.ENVIRONMENT ||
   "development") as Environment;
 
 // Environment-specific configuration map
@@ -52,27 +39,27 @@ const configMap = {
   docker: dockerConfig,
   kubernetes: kubernetesConfig,
   production: productionConfig,
-};
+} as const;
 
 // Create configuration with priority:
-// 1. Runtime environment variables (window.__ENV)
-// 2. Build-time environment variables (import.meta.env)
+// 1. Build-time environment variables (import.meta.env)
+// 2. Runtime environment variables (window.__ENV)
 // 3. Environment-specific defaults
 const config: Config = {
   // Service URLs with override priority
   userServiceUrl:
-    runtimeConfig.USER_SERVICE_URL ||
     env.VITE_USER_SERVICE_URL ||
+    runtimeConfig.USER_SERVICE_URL ||
     configMap[currentEnv].userServiceUrl,
 
   orderServiceUrl:
-    runtimeConfig.ORDER_SERVICE_URL ||
     env.VITE_ORDER_SERVICE_URL ||
+    runtimeConfig.ORDER_SERVICE_URL ||
     configMap[currentEnv].orderServiceUrl,
 
   frontendUrl:
-    runtimeConfig.FRONTEND_URL ||
     env.VITE_FRONTEND_URL ||
+    runtimeConfig.FRONTEND_URL ||
     configMap[currentEnv].frontendUrl,
 
   // Environment
@@ -96,6 +83,13 @@ const config: Config = {
 // Log the configuration in non-production environments
 if (config.environment !== "production") {
   console.log("Environment Config:", config);
+  console.log("Current Environment:", currentEnv);
+  console.log("Vite Environment Variables:", {
+    VITE_ENVIRONMENT: env.VITE_ENVIRONMENT,
+    VITE_USER_SERVICE_URL: env.VITE_USER_SERVICE_URL,
+    VITE_ORDER_SERVICE_URL: env.VITE_ORDER_SERVICE_URL,
+  });
+  console.log("Runtime Config:", runtimeConfig);
 }
 
 export default config;

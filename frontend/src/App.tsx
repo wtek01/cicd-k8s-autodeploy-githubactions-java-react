@@ -15,8 +15,9 @@ function Dashboard() {
       <h2>Welcome to the Microservices Demo</h2>
       <div className="dashboard-links">
         <Link to="/users" className="dashboard-link">
-          Manage Users
+          Manage Users Test
         </Link>
+        <br />
         <Link to="/orders" className="dashboard-link">
           Manage Orders
         </Link>

@@ -15,7 +15,7 @@ spec:
       labels:
         app: frontend
       annotations:
-        checksum/config: "${CONFIG_CHECKSUM}" # This will force a pod restart when config changes
+        checksum/config: "${CONFIG_CHECKSUM}"
     spec:
       containers:
         - name: frontend
@@ -25,31 +25,40 @@ spec:
             - configMapRef:
                 name: frontend-config
           env:
+            - name: VITE_ENVIRONMENT
+              value: "kubernetes"
             - name: ENVIRONMENT
+              value: "kubernetes"
+            - name: VITE_USER_SERVICE_URL
               valueFrom:
                 configMapKeyRef:
                   name: frontend-config
-                  key: ENVIRONMENT
-            - name: API_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: frontend-config
-                  key: API_URL
+                  key: VITE_USER_SERVICE_URL
             - name: USER_SERVICE_URL
               valueFrom:
                 configMapKeyRef:
                   name: frontend-config
-                  key: USER_SERVICE_URL
+                  key: VITE_USER_SERVICE_URL
+            - name: VITE_ORDER_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: VITE_ORDER_SERVICE_URL
             - name: ORDER_SERVICE_URL
               valueFrom:
                 configMapKeyRef:
                   name: frontend-config
-                  key: ORDER_SERVICE_URL
-            - name: FRONTEND_URL
+                  key: VITE_ORDER_SERVICE_URL
+            - name: VITE_API_BASE_URL
               valueFrom:
                 configMapKeyRef:
                   name: frontend-config
-                  key: FRONTEND_URL
+                  key: VITE_API_BASE_URL
+            - name: API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: VITE_API_BASE_URL
           ports:
             - containerPort: 80
           resources:
@@ -63,24 +72,24 @@ spec:
             httpGet:
               path: /health
               port: 80
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            failureThreshold: 30
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
             timeoutSeconds: 1
           livenessProbe:
             httpGet:
               path: /health
               port: 80
-            initialDelaySeconds: 60
-            periodSeconds: 15
+            initialDelaySeconds: 30
+            periodSeconds: 10
             failureThreshold: 3
             timeoutSeconds: 1
           readinessProbe:
             httpGet:
               path: /health
               port: 80
-            initialDelaySeconds: 15
-            periodSeconds: 10
+            initialDelaySeconds: 10
+            periodSeconds: 5
             failureThreshold: 3
             timeoutSeconds: 1
 ---
