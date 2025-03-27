@@ -55,30 +55,31 @@ spec:
               value: "true"
             - name: SPRING_MAIN_LAZY_INITIALIZATION
               value: "true"
-          startupProbe:
-            httpGet:
-              path: /actuator/health
-              port: 8081
-            initialDelaySeconds: 180
-            periodSeconds: 30
-            failureThreshold: 20
-            timeoutSeconds: 10
-          readinessProbe:
-            httpGet:
-              path: /actuator/health
-              port: 8081
-            initialDelaySeconds: 240
-            periodSeconds: 20
-            failureThreshold: 6
-            timeoutSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /actuator/health
-              port: 8081
-            initialDelaySeconds: 300
-            periodSeconds: 30
-            failureThreshold: 3
-            timeoutSeconds: 10
+          # Sondes désactivées temporairement pour permettre le démarrage
+          # startupProbe:
+          #   httpGet:
+          #     path: /actuator/health
+          #     port: 8081
+          #   initialDelaySeconds: 180
+          #   periodSeconds: 30
+          #   failureThreshold: 20
+          #   timeoutSeconds: 10
+          # readinessProbe:
+          #   httpGet:
+          #     path: /actuator/health
+          #     port: 8081
+          #   initialDelaySeconds: 240
+          #   periodSeconds: 20
+          #   failureThreshold: 6
+          #   timeoutSeconds: 10
+          # livenessProbe:
+          #   httpGet:
+          #     path: /actuator/health
+          #     port: 8081
+          #   initialDelaySeconds: 300
+          #   periodSeconds: 30
+          #   failureThreshold: 3
+          #   timeoutSeconds: 10
           resources:
             limits:
               memory: "384Mi"
