@@ -120,7 +120,16 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Deploying Kafka and Zookeeper..."
-          # Implementation of deploying Kafka and Zookeeper
+          kubectl apply -f infrastructure/k8s/kafka-statefulset.yml
+          kubectl apply -f infrastructure/k8s/zookeeper.yml
+          Start-Sleep -Seconds 10
+
+      - name: Clean up existing Ingress resources
+        shell: powershell
+        run: |
+          Write-Host "Cleaning up existing Ingress resources..."
+          kubectl delete ingress frontend-ingress microservices-ingress -n microservices --ignore-not-found
+          Start-Sleep -Seconds 5
 
       - name: Apply Kubernetes manifests
         shell: powershell
