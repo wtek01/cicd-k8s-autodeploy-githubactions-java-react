@@ -125,17 +125,44 @@ jobs:
         run: |
           Write-Host "Applying Kubernetes manifests..."
 
-          # Appliquer les services principaux en excluant les manifestes problématiques
-          kubectl apply -f infrastructure/k8s/user-service.yml --namespace=microservices
-          kubectl apply -f infrastructure/k8s/order-service.yml --namespace=microservices
-          kubectl apply -f infrastructure/k8s/postgres.yml --namespace=microservices
-          kubectl apply -f infrastructure/k8s/kafka.yml --namespace=microservices
-          kubectl apply -f infrastructure/k8s/zookeeper.yml --namespace=microservices
-          kubectl apply -f infrastructure/k8s/frontend.yml --namespace=microservices
-          kubectl apply -f infrastructure/k8s/ingress.yml --namespace=microservices
+          # Créer les namespaces nécessaires
+          Write-Host "Ensuring namespaces exist..."
+          kubectl create namespace microservices --dry-run=client -o yaml | kubectl apply -f -
 
+          # Méthode 1: Utiliser kustomize pour appliquer tous les manifestes d'un coup
+          Write-Host "Deploying all services using kustomize..."
+          kubectl apply -k infrastructure/k8s/
+
+          # Méthode 2 (alternative): Déploiement en groupes logiques (en commentaire)
+          # En cas de problème avec kustomize, vous pouvez décommenter ces lignes
+          <#
+          # Appliquer les ressources d'infrastructure
+          Write-Host "Deploying infrastructure resources..."
+          kubectl apply -f infrastructure/k8s/postgres-deployment.yml -n microservices
+          kubectl apply -f infrastructure/k8s/zookeeper.yml -n microservices
+          kubectl apply -f infrastructure/k8s/kafka-statefulset.yml -n microservices
+
+          # Attendre que l'infrastructure soit prête
           Write-Host "Waiting for infrastructure to be ready..."
-          Start-Sleep -Seconds 60
+          Start-Sleep -Seconds 30
+
+          # Appliquer les microservices
+          Write-Host "Deploying application services..."
+          kubectl apply -f infrastructure/k8s/user-service.yml -n microservices
+          kubectl apply -f infrastructure/k8s/order-service.yml -n microservices
+
+          # Appliquer le frontend et la configuration
+          Write-Host "Deploying frontend..."
+          kubectl apply -f infrastructure/k8s/frontend-config.yml -n microservices
+          kubectl apply -f infrastructure/k8s/frontend-deployment.yml -n microservices
+
+          # Appliquer l'ingress en dernier
+          Write-Host "Configuring ingress..."
+          kubectl apply -f infrastructure/k8s/ingress.yml -n microservices
+          #>
+
+          Write-Host "Waiting for services to initialize..."
+          Start-Sleep -Seconds 30
 
       - name: Install Prometheus Operator (optional - for monitoring)
         shell: powershell
@@ -160,30 +187,36 @@ jobs:
               Write-Host "Waiting for Prometheus Operator CRDs to be ready..."
               Start-Sleep -Seconds 60
               
+              # Méthode 1: Utiliser kustomize pour appliquer les configurations de monitoring
+              Write-Host "Applying monitoring configuration using kustomize..."
+              kubectl apply -k infrastructure/k8s/monitoring/
+              
+              # Méthode 2 (alternative): Appliquer les fichiers individuellement
+              <#
               # Appliquer nos fichiers de configuration de monitoring personnalisés
               Write-Host "Applying custom monitoring configurations..."
-              if (Test-Path infrastructure/k8s/monitoring-ingress.yml) {
-                kubectl apply -f infrastructure/k8s/monitoring-ingress.yml
+              if (Test-Path infrastructure/k8s/monitoring/monitoring-ingress.yml) {
+                kubectl apply -f infrastructure/k8s/monitoring/monitoring-ingress.yml
               }
               
-              if (Test-Path infrastructure/k8s/prometheus-alerts.yml) {
-                kubectl apply -f infrastructure/k8s/prometheus-alerts.yml
+              if (Test-Path infrastructure/k8s/monitoring/prometheus-alerts.yml) {
+                kubectl apply -f infrastructure/k8s/monitoring/prometheus-alerts.yml
               }
               
-              if (Test-Path infrastructure/k8s/grafana-dashboard-cm.yml) {
-                kubectl apply -f infrastructure/k8s/grafana-dashboard-cm.yml
+              if (Test-Path infrastructure/k8s/monitoring/grafana-dashboard-cm.yml) {
+                kubectl apply -f infrastructure/k8s/monitoring/grafana-dashboard-cm.yml
               }
               
-              # Maintenant nous pouvons appliquer les ServiceMonitors qui étaient exclus
-              if (Test-Path infrastructure/k8s/service-monitors.yml) {
+              if (Test-Path infrastructure/k8s/monitoring/service-monitors.yml) {
                 Write-Host "Applying service monitors..."
-                kubectl apply -f infrastructure/k8s/service-monitors.yml -n monitoring
+                kubectl apply -f infrastructure/k8s/monitoring/service-monitors.yml -n monitoring
               }
               
-              if (Test-Path infrastructure/k8s/kustomization.yaml) {
-                Write-Host "Applying kustomization..."
-                kubectl apply -f infrastructure/k8s/kustomization.yaml
+              if (Test-Path infrastructure/k8s/monitoring/traffic-generator.yml) {
+                Write-Host "Deploying traffic generator..."
+                kubectl apply -f infrastructure/k8s/monitoring/traffic-generator.yml -n microservices
               }
+              #>
               
               Write-Host "Monitoring setup complete."
             } else {
