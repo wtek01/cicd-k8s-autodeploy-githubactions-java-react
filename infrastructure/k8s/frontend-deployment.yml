@@ -20,12 +20,12 @@ spec:
       labels:
         app: frontend
       annotations:
-        checksum/config: "${CONFIG_CHECKSUM}"
-        timestamp: "${TIMESTAMP}"
+        checksum/config: "20019977"
+        timestamp: "20019977"
     spec:
       containers:
         - name: frontend
-          image: wtek01/frontend:${TIMESTAMP}
+          image: wtek01/frontend:20019977
           imagePullPolicy: Always
           envFrom:
             - configMapRef:
