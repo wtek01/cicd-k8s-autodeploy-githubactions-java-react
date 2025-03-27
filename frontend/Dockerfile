@@ -16,18 +16,17 @@ ENV VITE_USER_SERVICE_URL=$VITE_USER_SERVICE_URL
 ENV VITE_ORDER_SERVICE_URL=$VITE_ORDER_SERVICE_URL
 ENV VITE_ENVIRONMENT=$VITE_ENVIRONMENT
 
-# Copy package.json and package-lock.json
+# Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies with specific cache mount
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
 
 # Copy source code
 COPY . .
 
-# Skip TypeScript checking and build directly with Vite
-RUN echo "Building without TypeScript checking for development purposes"
-# Use vite directly to skip TypeScript checks
+# Build with Vite
 RUN npx vite build
 
 # Production stage

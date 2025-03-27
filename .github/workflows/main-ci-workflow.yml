@@ -8,7 +8,7 @@ on:
       - "**.md"
   pull_request:
     branches: [main, master]
-  workflow_dispatch: # Pour déclencher manuellement le workflow
+  workflow_dispatch:
 
 jobs:
   build-and-test:
@@ -86,8 +86,17 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract version from pom.xml
+      - name: Generate version for frontend
+        id: frontend-version
+        if: matrix.service == 'frontend'
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          echo "version=$TIMESTAMP" >> $GITHUB_OUTPUT
+          echo "Using frontend version: $TIMESTAMP"
+
+      - name: Extract version from pom.xml for backend services
         id: get-version
+        if: matrix.service != 'frontend'
         run: |
           VERSION=$(grep -m1 "<version>" backend/pom.xml | sed 's/[^0-9\.]//g')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -99,7 +108,7 @@ jobs:
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}
           tags: |
-            type=semver,pattern={{version}},value=${{ steps.get-version.outputs.version }}
+            type=raw,value=${{ matrix.service == 'frontend' && steps.frontend-version.outputs.version || steps.get-version.outputs.version }}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Set Build Context and Dockerfile Path
@@ -123,17 +132,29 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:buildcache
           cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:buildcache,mode=max
+          build-args: |
+            VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
+            VITE_USER_SERVICE_URL=${{ secrets.VITE_USER_SERVICE_URL }}
+            VITE_ORDER_SERVICE_URL=${{ secrets.VITE_ORDER_SERVICE_URL }}
+            VITE_ENVIRONMENT=production
 
   update-k8s-manifests:
     needs: build-and-push-images
     runs-on: self-hosted
     permissions:
-      contents: write # Important: donne les permissions d'écriture
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Extract version from pom.xml
+      - name: Generate frontend version
+        id: frontend-version
+        run: |
+          $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+          echo "version=$timestamp" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          echo "Using frontend version: $timestamp"
+
+      - name: Extract version from pom.xml for backend services
         id: get-version
         shell: powershell
         run: |
@@ -146,10 +167,15 @@ jobs:
       - name: Update Kubernetes manifests
         shell: powershell
         run: |
-          # Mettre à jour les manifests avec la nouvelle version d'image
+          # Update backend service manifests
           (Get-Content infrastructure/k8s/user-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/user-service.yml
           (Get-Content infrastructure/k8s/order-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/order-service.yml
-          (Get-Content infrastructure/k8s/frontend-deployment.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/frontend-deployment.yml
+
+          # Update frontend deployment with new version and timestamp
+          $frontendDeployment = Get-Content infrastructure/k8s/frontend-deployment.yml
+          $frontendDeployment = $frontendDeployment -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:${{ steps.frontend-version.outputs.version }}"
+          $frontendDeployment = $frontendDeployment -replace "timestamp: .*", "timestamp: `"${{ steps.frontend-version.outputs.version }}`""
+          $frontendDeployment | Set-Content infrastructure/k8s/frontend-deployment.yml
 
       - name: Commit and push updated manifests
         shell: powershell
@@ -157,11 +183,7 @@ jobs:
           git config --local user.email "wtek01@gmail.com"
           git config --local user.name "GitHub Actions Bot"
           git add infrastructure/k8s/*.yml
-
-          # Tenter de faire un commit et capturer l'erreur éventuelle
           $commitOutput = git commit -m "ci: update k8s manifests with new image versions" 2>&1
-
-          # Ignorer l'erreur si c'est "nothing to commit"
           if ($commitOutput -match "nothing to commit" -or $LASTEXITCODE -eq 0) {
               Write-Host "Commit successful or nothing to commit"
               git push origin main --force
