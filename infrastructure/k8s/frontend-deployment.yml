@@ -20,11 +20,11 @@ spec:
       labels:
         app: frontend
       annotations:
-        checksum/config: "${VERSION}"
+        checksum/config: "20156027"
     spec:
       containers:
         - name: frontend
-          image: wtek01/frontend:${VERSION}
+          image: wtek01/frontend:20156027
           imagePullPolicy: Always
           envFrom:
             - configMapRef:
