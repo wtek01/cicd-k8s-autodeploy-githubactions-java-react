@@ -86,13 +86,13 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Generate version for frontend
+      - name: Generate frontend version
         id: frontend-version
         if: matrix.service == 'frontend'
         run: |
-          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          echo "version=$TIMESTAMP" >> $GITHUB_OUTPUT
-          echo "Using frontend version: $TIMESTAMP"
+          VERSION=$(date +%Y%m%d-%H%M%S)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using frontend version: $VERSION"
 
       - name: Extract version from pom.xml for backend services
         id: get-version
