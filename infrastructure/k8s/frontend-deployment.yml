@@ -24,7 +24,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: wtek01/frontend:${VERSION}
+          image: wtek01/frontend:latest
           imagePullPolicy: Always
           envFrom:
             - configMapRef:
