@@ -171,12 +171,10 @@ jobs:
           (Get-Content infrastructure/k8s/user-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/user-service.yml
           (Get-Content infrastructure/k8s/order-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/order-service.yml
 
-          # Update frontend deployment with environment variables
-          $env:TIMESTAMP = ${{ steps.frontend-version.outputs.version }}
-          $env:CONFIG_CHECKSUM = ${{ steps.frontend-version.outputs.version }}
+          # Update frontend deployment with version
+          $env:VERSION = ${{ steps.frontend-version.outputs.version }}
           $content = Get-Content infrastructure/k8s/frontend-deployment.yml
-          $content = $content -replace '\${TIMESTAMP}', $env:TIMESTAMP
-          $content = $content -replace '\${CONFIG_CHECKSUM}', $env:CONFIG_CHECKSUM
+          $content = $content -replace '\${VERSION}', $env:VERSION
           $content | Set-Content infrastructure/k8s/frontend-deployment.yml
 
       - name: Commit and push updated manifests
