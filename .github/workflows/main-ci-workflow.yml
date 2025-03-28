@@ -90,7 +90,7 @@ jobs:
         id: frontend-version
         if: matrix.service == 'frontend'
         run: |
-          VERSION=$(date +%Y%m%d-%H%M%S)
+          VERSION=$(date +%Y.%m.%d-%H%M%S)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Using frontend version: $VERSION"
 
@@ -128,7 +128,9 @@ jobs:
           context: ${{ steps.set-context.outputs.context }}
           file: ${{ steps.set-context.outputs.dockerfile }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:${{ matrix.service == 'frontend' && steps.frontend-version.outputs.version || steps.get-version.outputs.version }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:latest
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:buildcache
           cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:buildcache,mode=max
@@ -137,6 +139,18 @@ jobs:
             VITE_USER_SERVICE_URL=${{ secrets.VITE_USER_SERVICE_URL }}
             VITE_ORDER_SERVICE_URL=${{ secrets.VITE_ORDER_SERVICE_URL }}
             VITE_ENVIRONMENT=production
+
+      - name: Verify image push
+        if: matrix.service == 'frontend'
+        run: |
+          # Wait a moment for Docker Hub to process the push
+          sleep 10
+          # Try to pull the image to verify it exists
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:${{ steps.frontend-version.outputs.version }}
+          if [ $? -ne 0 ]; then
+            echo "Failed to verify image push"
+            exit 1
+          fi
 
   update-k8s-manifests:
     needs: build-and-push-images
