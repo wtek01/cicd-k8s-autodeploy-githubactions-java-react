@@ -185,18 +185,17 @@ jobs:
           (Get-Content infrastructure/k8s/user-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/user-service.yml
           (Get-Content infrastructure/k8s/order-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/order-service.yml
 
-          # Create a temporary file for frontend deployment
-          $version = ${{ steps.frontend-version.outputs.version }}
-          $content = Get-Content infrastructure/k8s/frontend-deployment.yml
-          $tempFile = "temp-frontend-deployment.yml"
-          $content | Set-Content $tempFile
+          # Create a temporary deployment file with the correct version
+          $version = "${{ steps.frontend-version.outputs.version }}"
+          $deployment = Get-Content infrastructure/k8s/frontend-deployment.yml -Raw
+          $deployment = $deployment.Replace('${VERSION}', $version)
+          $deployment | Set-Content "temp-frontend-deployment.yml"
 
-          # Apply the deployment using the temporary file with environment variable
-          $env:VERSION = $version
-          Get-Content $tempFile | ForEach-Object { $_ -replace '\${VERSION}', $env:VERSION } | kubectl apply -f -
+          # Apply the deployment with the correct version
+          kubectl apply -f temp-frontend-deployment.yml
 
           # Clean up
-          Remove-Item $tempFile
+          Remove-Item temp-frontend-deployment.yml
 
       - name: Skip commit for frontend deployment
         shell: powershell
