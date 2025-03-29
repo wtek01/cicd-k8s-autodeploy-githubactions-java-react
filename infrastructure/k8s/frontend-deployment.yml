@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: frontend
-  namespace: microservices
+  namespace: ${NAMESPACE}
   labels:
     app: frontend
 spec:
@@ -24,7 +24,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: wtek01/frontend:latest
+          image: wtek01/frontend:${VERSION}
           imagePullPolicy: Always
           envFrom:
             - configMapRef:
@@ -102,7 +102,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: frontend
-  namespace: microservices
+  namespace: ${NAMESPACE}
   labels:
     app: frontend
 spec:

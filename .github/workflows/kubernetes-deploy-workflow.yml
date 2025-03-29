@@ -239,66 +239,80 @@ jobs:
             # Deploy infrastructure resources
             Write-Host "Deploying infrastructure resources..."
             kubectl apply -f infrastructure/k8s/postgres-deployment.yml -n $namespace
-            kubectl apply -f infrastructure/k8s/zookeeper.yml -n $namespace
-            kubectl apply -f infrastructure/k8s/kafka-statefulset.yml -n $namespace
+            # Zookeeper and Kafka are already deployed in the microservices namespace
+            # Just use those instances as they can be shared
+            
+            # Set host and service variables for feature branch
+            if ($namespace -ne "microservices") {
+              $frontendHost = "frontend-$namespace.microservices.local"
+              $apiHost = "api-$namespace.microservices.local"
+              $frontendService = "frontend$suffix"
+              $userService = "user-service$suffix" 
+              $orderService = "order-service$suffix"
+            } else {
+              $frontendHost = "frontend.microservices.local"
+              $apiHost = "api.microservices.local"
+              $frontendService = "frontend"
+              $userService = "user-service"
+              $orderService = "order-service"
+            }
             
             # Wait for infrastructure to be ready
             Write-Host "Waiting for infrastructure to be ready..."
-            Start-Sleep -Seconds 30
+            Start-Sleep -Seconds 10
             
-            # For each service, create a temporary file with proper names and tags
-            Write-Host "Preparing service manifests..."
+            # Process and apply user-service
+            Write-Host "Processing user-service manifest..."
+            $userServiceYaml = Get-Content infrastructure/k8s/user-service.yml -Raw
+            $userServiceYaml = $userServiceYaml.Replace('${NAMESPACE}', $namespace)
+            $userServiceYaml = $userServiceYaml -replace 'name: user-service', "name: user-service$suffix"
+            $userServiceYaml = $userServiceYaml -replace 'app: user-service', "app: user-service$suffix" 
+            $userServiceYaml = $userServiceYaml -replace 'image: wtek01/user-service:.*', "image: wtek01/user-service:$imageTag"
+            $userServiceYaml | Out-File -FilePath "temp-user-service.yml" -Encoding utf8
+            kubectl apply -f temp-user-service.yml
             
-            # Process user-service
-            $userService = Get-Content infrastructure/k8s/user-service.yml -Raw
-            $userService = $userService.Replace('name: user-service', "name: user-service$suffix")
-            $userService = $userService.Replace('app: user-service', "app: user-service$suffix")
-            $userService = $userService -replace 'image: wtek01/user-service:.*', "image: wtek01/user-service:$imageTag"
-            $userService | Out-File -FilePath "temp-user-service.yml" -Encoding utf8
+            # Process and apply order-service
+            Write-Host "Processing order-service manifest..."
+            $orderServiceYaml = Get-Content infrastructure/k8s/order-service.yml -Raw
+            $orderServiceYaml = $orderServiceYaml.Replace('${NAMESPACE}', $namespace)
+            $orderServiceYaml = $orderServiceYaml -replace 'name: order-service', "name: order-service$suffix" 
+            $orderServiceYaml = $orderServiceYaml -replace 'app: order-service', "app: order-service$suffix"
+            $orderServiceYaml = $orderServiceYaml -replace 'image: wtek01/order-service:.*', "image: wtek01/order-service:$imageTag"
+            $orderServiceYaml | Out-File -FilePath "temp-order-service.yml" -Encoding utf8
+            kubectl apply -f temp-order-service.yml
             
-            # Process order-service
-            $orderService = Get-Content infrastructure/k8s/order-service.yml -Raw
-            $orderService = $orderService.Replace('name: order-service', "name: order-service$suffix")
-            $orderService = $orderService.Replace('app: order-service', "app: order-service$suffix")
-            $orderService = $orderService -replace 'image: wtek01/order-service:.*', "image: wtek01/order-service:$imageTag"
-            $orderService | Out-File -FilePath "temp-order-service.yml" -Encoding utf8
+            # Process and apply frontend-config
+            Write-Host "Processing frontend-config manifest..."
+            $frontendConfigYaml = Get-Content infrastructure/k8s/frontend-config.yml -Raw
+            $frontendConfigYaml = $frontendConfigYaml.Replace('${NAMESPACE}', $namespace)
+            $frontendConfigYaml = $frontendConfigYaml -replace 'name: frontend-config', "name: frontend-config$suffix"
+            $frontendConfigYaml = $frontendConfigYaml -replace 'app: frontend', "app: frontend$suffix"
+            $frontendConfigYaml | Out-File -FilePath "temp-frontend-config.yml" -Encoding utf8
+            kubectl apply -f temp-frontend-config.yml
             
-            # Process frontend
-            $frontendConfig = Get-Content infrastructure/k8s/frontend-config.yml -Raw
-            $frontendConfig = $frontendConfig.Replace('name: frontend-config', "name: frontend-config$suffix")
-            $frontendConfig | Out-File -FilePath "temp-frontend-config.yml" -Encoding utf8
+            # Process and apply frontend-deployment
+            Write-Host "Processing frontend-deployment manifest..."
+            $frontendDeploymentYaml = Get-Content infrastructure/k8s/frontend-deployment.yml -Raw
+            $frontendDeploymentYaml = $frontendDeploymentYaml.Replace('${NAMESPACE}', $namespace)
+            $frontendDeploymentYaml = $frontendDeploymentYaml.Replace('${VERSION}', $imageTag)
+            $frontendDeploymentYaml = $frontendDeploymentYaml -replace 'name: frontend', "name: frontend$suffix"
+            $frontendDeploymentYaml = $frontendDeploymentYaml -replace 'app: frontend', "app: frontend$suffix"
+            $frontendDeploymentYaml | Out-File -FilePath "temp-frontend-deployment.yml" -Encoding utf8
+            kubectl apply -f temp-frontend-deployment.yml
             
-            $frontendDeployment = Get-Content infrastructure/k8s/frontend-deployment.yml -Raw
-            $frontendDeployment = $frontendDeployment.Replace('name: frontend', "name: frontend$suffix")
-            $frontendDeployment = $frontendDeployment.Replace('app: frontend', "app: frontend$suffix")
-            $frontendDeployment = $frontendDeployment -replace 'image: wtek01/frontend:.*', "image: wtek01/frontend:$imageTag"
-            $frontendDeployment | Out-File -FilePath "temp-frontend-deployment.yml" -Encoding utf8
-            
-            # Apply the modified services
-            Write-Host "Deploying application services to namespace: $namespace"
-            kubectl apply -f temp-user-service.yml -n $namespace
-            kubectl apply -f temp-order-service.yml -n $namespace
-            kubectl apply -f temp-frontend-config.yml -n $namespace
-            kubectl apply -f temp-frontend-deployment.yml -n $namespace
-            
-            # Process ingress for feature namespaces
-            $ingress = Get-Content infrastructure/k8s/ingress.yml -Raw
-            $ingress = $ingress.Replace('name: microservices-ingress', "name: microservices-ingress$suffix")
-            
-            # For feature branches, adjust hostnames
-            if ($namespace -ne "microservices") {
-              $ingress = $ingress -replace 'host: api\.microservices\.local', "host: api-$namespace.microservices.local"
-              $ingress = $ingress -replace 'host: frontend\.microservices\.local', "host: frontend-$namespace.microservices.local"
-              
-              # Update service names for feature branch
-              $ingress = $ingress -replace 'service:\s*name: user-service', "service:`n      name: user-service$suffix"
-              $ingress = $ingress -replace 'service:\s*name: order-service', "service:`n      name: order-service$suffix"
-              $ingress = $ingress -replace 'service:\s*name: frontend', "service:`n      name: frontend$suffix"
-            }
-            
-            $ingress | Out-File -FilePath "temp-ingress.yml" -Encoding utf8
+            # Process and apply ingress
+            Write-Host "Processing ingress manifest..."
+            $ingressYaml = Get-Content infrastructure/k8s/ingress.yml -Raw
+            $ingressYaml = $ingressYaml.Replace('${NAMESPACE}', $namespace)
+            $ingressYaml = $ingressYaml.Replace('${FRONTEND_HOST}', $frontendHost)
+            $ingressYaml = $ingressYaml.Replace('${API_HOST}', $apiHost)
+            $ingressYaml = $ingressYaml.Replace('${FRONTEND_SERVICE}', $frontendService)
+            $ingressYaml = $ingressYaml.Replace('${USER_SERVICE}', $userService)
+            $ingressYaml = $ingressYaml.Replace('${ORDER_SERVICE}', $orderService)
+            $ingressYaml = $ingressYaml -replace 'name: microservices-ingress', "name: microservices-ingress$suffix"
+            $ingressYaml | Out-File -FilePath "temp-ingress.yml" -Encoding utf8
             Write-Host "Applying ingress configuration..."
-            kubectl apply -f temp-ingress.yml -n $namespace
+            kubectl apply -f temp-ingress.yml
             
             # Clean up temporary files
             Remove-Item temp-*.yml
@@ -379,9 +393,26 @@ jobs:
           $suffix = "${{ steps.deployment-env.outputs.deployment_suffix }}"
 
           # Restart deployments to ensure latest version is used
-          kubectl rollout restart deployment/user-service$suffix -n $namespace
-          kubectl rollout restart deployment/order-service$suffix -n $namespace
-          kubectl rollout restart deployment/frontend$suffix -n $namespace
+          try {
+            kubectl rollout restart deployment/user-service$suffix -n $namespace
+            Write-Host "User service deployment restarted"
+          } catch {
+            Write-Host "Warning: Failed to restart user-service$suffix deployment: $_"
+          }
+
+          try {
+            kubectl rollout restart deployment/order-service$suffix -n $namespace
+            Write-Host "Order service deployment restarted"
+          } catch {
+            Write-Host "Warning: Failed to restart order-service$suffix deployment: $_"
+          }
+
+          try {
+            kubectl rollout restart deployment/frontend$suffix -n $namespace
+            Write-Host "Frontend deployment restarted"
+          } catch {
+            Write-Host "Warning: Failed to restart frontend$suffix deployment: $_"
+          }
 
           # For stateful applications like Kafka, we don't restart to avoid data loss
 
