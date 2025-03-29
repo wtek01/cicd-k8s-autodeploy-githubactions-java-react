@@ -3,7 +3,7 @@ name: Build and Publish
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, "feature/**"]
     paths-ignore:
       - "**.md"
   pull_request:
@@ -102,6 +102,23 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Using version: $VERSION"
 
+      - name: Set image tags based on branch
+        id: set-tags
+        run: |
+          # Extract branch name
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+
+          # Set tag prefix for feature branches
+          if [[ "$BRANCH_NAME" == feature/* ]]; then
+            # Convert feature/name to feature-name
+            TAG_PREFIX=$(echo "$BRANCH_NAME" | sed 's/\//-/g')
+            echo "tag_prefix=$TAG_PREFIX" >> $GITHUB_OUTPUT
+            echo "Using tag prefix: $TAG_PREFIX"
+          else
+            echo "tag_prefix=latest" >> $GITHUB_OUTPUT
+          fi
+
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v4
@@ -109,7 +126,7 @@ jobs:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}
           tags: |
             type=raw,value=${{ matrix.service == 'frontend' && steps.frontend-version.outputs.version || steps.get-version.outputs.version }}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ steps.set-tags.outputs.tag_prefix }}
 
       - name: Set Build Context and Dockerfile Path
         id: set-context
@@ -130,7 +147,7 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:${{ matrix.service == 'frontend' && steps.frontend-version.outputs.version || steps.get-version.outputs.version }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:${{ steps.set-tags.outputs.tag_prefix }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:buildcache
           cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:buildcache,mode=max
@@ -178,9 +195,26 @@ jobs:
           echo "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           echo "Using version: $version"
 
+      - name: Get branch name
+        id: branch
+        run: |
+          $branchName = "${{ github.ref_name }}"
+          echo "name=$branchName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          echo "Using branch: $branchName"
+
       - name: Update Kubernetes manifests
         shell: powershell
         run: |
+          # Get branch name
+          $branchName = "${{ steps.branch.outputs.name }}"
+          $isFeatureBranch = $branchName -like 'feature/*'
+
+          # Create deployment suffix for feature branches
+          $deploymentSuffix = ""
+          if ($isFeatureBranch) {
+            $deploymentSuffix = "-" + $branchName.Replace('/', '-')
+          }
+
           # Update backend service manifests
           (Get-Content infrastructure/k8s/user-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/user-service.yml
           (Get-Content infrastructure/k8s/order-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/order-service.yml
@@ -189,6 +223,13 @@ jobs:
           $version = "${{ steps.frontend-version.outputs.version }}"
           $deployment = Get-Content infrastructure/k8s/frontend-deployment.yml -Raw
           $deployment = $deployment.Replace('${VERSION}', $version)
+
+          # For feature branches, update the name to avoid conflicts with main deployments
+          if ($isFeatureBranch) {
+            $deployment = $deployment -replace "name: frontend", "name: frontend$deploymentSuffix"
+            $deployment = $deployment -replace "app: frontend", "app: frontend$deploymentSuffix"
+          }
+
           $deployment | Set-Content "temp-frontend-deployment.yml"
 
           # Apply the deployment with the correct version
@@ -200,13 +241,20 @@ jobs:
       - name: Skip commit for frontend deployment
         shell: powershell
         run: |
-          git config --local user.email "wtek01@gmail.com"
-          git config --local user.name "GitHub Actions Bot"
-          git add infrastructure/k8s/user-service.yml infrastructure/k8s/order-service.yml
+          $branchName = "${{ steps.branch.outputs.name }}"
 
-          # Try to commit only backend changes
-          $commitOutput = git commit -m "ci: update backend service manifests with new image versions" 2>&1
-          if ($commitOutput -match "nothing to commit" -or $LASTEXITCODE -eq 0) {
-              Write-Host "Commit successful or nothing to commit"
-              git push origin main
+          # Only commit changes when on main branch
+          if ($branchName -eq "main" -or $branchName -eq "master") {
+            git config --local user.email "wtek01@gmail.com"
+            git config --local user.name "GitHub Actions Bot"
+            git add infrastructure/k8s/user-service.yml infrastructure/k8s/order-service.yml
+
+            # Try to commit only backend changes
+            $commitOutput = git commit -m "ci: update backend service manifests with new image versions" 2>&1
+            if ($commitOutput -match "nothing to commit" -or $LASTEXITCODE -eq 0) {
+                Write-Host "Commit successful or nothing to commit"
+                git push origin $branchName
+            }
+          } else {
+            Write-Host "Skipping commit for feature branch: $branchName"
           }

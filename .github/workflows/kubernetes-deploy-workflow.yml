@@ -3,7 +3,7 @@ name: Deploy to Kubernetes
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, "feature/**"]
     paths:
       - "infrastructure/k8s/**" # Se déclenche sur les modifications des fichiers dans le dossier k8s
   workflow_dispatch: # Pour déclencher manuellement le workflow
@@ -11,7 +11,7 @@ on:
     workflows: ["Build and Publish"]
     types:
       - completed
-    branches: [main, master]
+    branches: [main, master, "feature/**"]
 
 env:
   REGISTRY: docker.io
@@ -31,6 +31,39 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Get branch name
+        id: branch
+        run: |
+          if ('${{ github.event_name }}' -eq 'workflow_run') {
+            # For workflow_run events, get the branch that triggered the workflow
+            $branchName = '${{ github.event.workflow_run.head_branch }}'
+          } else {
+            # For push and workflow_dispatch events, use ref_name
+            $branchName = '${{ github.ref_name }}'
+          }
+          Write-Host "Branch name: $branchName"
+          echo "name=$branchName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Set deployment environment
+        id: deployment-env
+        run: |
+          $branchName = '${{ steps.branch.outputs.name }}'
+          $isFeatureBranch = $branchName -like 'feature/*'
+
+          if ($isFeatureBranch) {
+            # Convert feature/name to feature-name for namespace
+            $namespace = "feature-" + $branchName.Substring(8).ToLower().Replace('/', '-')
+            echo "namespace=$namespace" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            echo "deployment_suffix=-$namespace" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            echo "image_tag=$($branchName.Replace('/', '-'))" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Feature branch deployment to namespace: $namespace"
+          } else {
+            echo "namespace=microservices" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            echo "deployment_suffix=" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            echo "image_tag=latest" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Main branch deployment to namespace: microservices"
+          }
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v3
@@ -70,8 +103,8 @@ jobs:
       - name: Create Kubernetes namespace if not exists
         shell: powershell
         run: |
-          Write-Host "Creating or verifying microservices namespace..."
-          kubectl create namespace microservices --dry-run=client -o yaml | kubectl apply -f -
+          Write-Host "Creating or verifying namespace: ${{ steps.deployment-env.outputs.namespace }}..."
+          kubectl create namespace ${{ steps.deployment-env.outputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Set up RBAC for GitHub Actions
         shell: powershell
@@ -85,7 +118,7 @@ jobs:
           kind: ServiceAccount
           metadata:
             name: github-actions
-            namespace: microservices
+            namespace: ${{ steps.deployment-env.outputs.namespace }}
           ---
           apiVersion: rbac.authorization.k8s.io/v1
           kind: ClusterRole
@@ -112,7 +145,7 @@ jobs:
           subjects:
           - kind: ServiceAccount
             name: github-actions
-            namespace: microservices
+            namespace: ${{ steps.deployment-env.outputs.namespace }}
           roleRef:
             kind: ClusterRole
             name: github-actions-role
@@ -137,48 +170,106 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Cleaning up existing Ingress resources..."
-          kubectl delete ingress frontend-ingress microservices-ingress -n microservices --ignore-not-found
+          kubectl delete ingress frontend-ingress microservices-ingress -n ${{ steps.deployment-env.outputs.namespace }} --ignore-not-found
           Start-Sleep -Seconds 5
 
       - name: Apply Kubernetes manifests
         shell: powershell
         run: |
-          Write-Host "Applying Kubernetes manifests..."
+          Write-Host "Applying Kubernetes manifests for branch: ${{ steps.branch.outputs.name }}..."
+          $namespace = "${{ steps.deployment-env.outputs.namespace }}"
+          $suffix = "${{ steps.deployment-env.outputs.deployment_suffix }}"
+          $imageTag = "${{ steps.deployment-env.outputs.image_tag }}"
 
-          # Créer les namespaces nécessaires
-          Write-Host "Ensuring namespaces exist..."
-          kubectl create namespace microservices --dry-run=client -o yaml | kubectl apply -f -
+          # Create the namespaces
+          Write-Host "Ensuring namespace exists: $namespace"
+          kubectl create namespace $namespace --dry-run=client -o yaml | kubectl apply -f -
 
-          # Essayer d'utiliser kustomize, mais revenir à la méthode manuelle en cas d'échec
-          Write-Host "Trying to deploy using kustomize..."
-          if (kubectl apply -k infrastructure/k8s/ 2>$null) {
-            Write-Host "Kustomize deployment successful."
-          } else {
-            Write-Host "Kustomize failed, falling back to individual file application..."
+          # Try using kustomize
+          $kustomizeSuccess = $false
+          if (Test-Path "infrastructure/k8s/overlays/${{ steps.branch.outputs.name }}") {
+            Write-Host "Found kustomize overlay for branch, trying to deploy using it..."
+            try {
+              kubectl apply -k "infrastructure/k8s/overlays/${{ steps.branch.outputs.name }}" -n $namespace
+              $kustomizeSuccess = $LASTEXITCODE -eq 0
+              if ($kustomizeSuccess) {
+                Write-Host "Kustomize deployment successful."
+              }
+            } catch {
+              Write-Host "Kustomize overlay failed: $_"
+            }
+          }
+
+          # Fall back to manual application if kustomize fails
+          if (-not $kustomizeSuccess) {
+            Write-Host "Using individual file application..."
             
-            # Appliquer les ressources d'infrastructure
+            # Deploy infrastructure resources
             Write-Host "Deploying infrastructure resources..."
-            kubectl apply -f infrastructure/k8s/postgres-deployment.yml -n microservices
-            kubectl apply -f infrastructure/k8s/zookeeper.yml -n microservices
-            kubectl apply -f infrastructure/k8s/kafka-statefulset.yml -n microservices
+            kubectl apply -f infrastructure/k8s/postgres-deployment.yml -n $namespace
+            kubectl apply -f infrastructure/k8s/zookeeper.yml -n $namespace
+            kubectl apply -f infrastructure/k8s/kafka-statefulset.yml -n $namespace
             
-            # Attendre que l'infrastructure soit prête
+            # Wait for infrastructure to be ready
             Write-Host "Waiting for infrastructure to be ready..."
             Start-Sleep -Seconds 30
             
-            # Appliquer les microservices
-            Write-Host "Deploying application services..."
-            kubectl apply -f infrastructure/k8s/user-service.yml -n microservices
-            kubectl apply -f infrastructure/k8s/order-service.yml -n microservices
+            # For each service, create a temporary file with proper names and tags
+            Write-Host "Preparing service manifests..."
             
-            # Appliquer le frontend et la configuration
-            Write-Host "Deploying frontend..."
-            kubectl apply -f infrastructure/k8s/frontend-config.yml -n microservices
-            kubectl apply -f infrastructure/k8s/frontend-deployment.yml -n microservices
+            # Process user-service
+            $userService = Get-Content infrastructure/k8s/user-service.yml -Raw
+            $userService = $userService.Replace('name: user-service', "name: user-service$suffix")
+            $userService = $userService.Replace('app: user-service', "app: user-service$suffix")
+            $userService = $userService -replace 'image: wtek01/user-service:.*', "image: wtek01/user-service:$imageTag"
+            $userService | Out-File -FilePath "temp-user-service.yml" -Encoding utf8
             
-            # Appliquer l'ingress en dernier
-            Write-Host "Configuring ingress..."
-            kubectl apply -f infrastructure/k8s/ingress.yml -n microservices
+            # Process order-service
+            $orderService = Get-Content infrastructure/k8s/order-service.yml -Raw
+            $orderService = $orderService.Replace('name: order-service', "name: order-service$suffix")
+            $orderService = $orderService.Replace('app: order-service', "app: order-service$suffix")
+            $orderService = $orderService -replace 'image: wtek01/order-service:.*', "image: wtek01/order-service:$imageTag"
+            $orderService | Out-File -FilePath "temp-order-service.yml" -Encoding utf8
+            
+            # Process frontend
+            $frontendConfig = Get-Content infrastructure/k8s/frontend-config.yml -Raw
+            $frontendConfig = $frontendConfig.Replace('name: frontend-config', "name: frontend-config$suffix")
+            $frontendConfig | Out-File -FilePath "temp-frontend-config.yml" -Encoding utf8
+            
+            $frontendDeployment = Get-Content infrastructure/k8s/frontend-deployment.yml -Raw
+            $frontendDeployment = $frontendDeployment.Replace('name: frontend', "name: frontend$suffix")
+            $frontendDeployment = $frontendDeployment.Replace('app: frontend', "app: frontend$suffix")
+            $frontendDeployment = $frontendDeployment -replace 'image: wtek01/frontend:.*', "image: wtek01/frontend:$imageTag"
+            $frontendDeployment | Out-File -FilePath "temp-frontend-deployment.yml" -Encoding utf8
+            
+            # Apply the modified services
+            Write-Host "Deploying application services to namespace: $namespace"
+            kubectl apply -f temp-user-service.yml -n $namespace
+            kubectl apply -f temp-order-service.yml -n $namespace
+            kubectl apply -f temp-frontend-config.yml -n $namespace
+            kubectl apply -f temp-frontend-deployment.yml -n $namespace
+            
+            # Process ingress for feature namespaces
+            $ingress = Get-Content infrastructure/k8s/ingress.yml -Raw
+            $ingress = $ingress.Replace('name: microservices-ingress', "name: microservices-ingress$suffix")
+            
+            # For feature branches, adjust hostnames
+            if ($namespace -ne "microservices") {
+              $ingress = $ingress -replace 'host: api\.microservices\.local', "host: api-$namespace.microservices.local"
+              $ingress = $ingress -replace 'host: frontend\.microservices\.local', "host: frontend-$namespace.microservices.local"
+              
+              # Update service names for feature branch
+              $ingress = $ingress -replace 'service:\s*name: user-service', "service:`n      name: user-service$suffix"
+              $ingress = $ingress -replace 'service:\s*name: order-service', "service:`n      name: order-service$suffix"
+              $ingress = $ingress -replace 'service:\s*name: frontend', "service:`n      name: frontend$suffix"
+            }
+            
+            $ingress | Out-File -FilePath "temp-ingress.yml" -Encoding utf8
+            Write-Host "Applying ingress configuration..."
+            kubectl apply -f temp-ingress.yml -n $namespace
+            
+            # Clean up temporary files
+            Remove-Item temp-*.yml
           }
 
           Write-Host "Waiting for services to initialize..."
@@ -252,10 +343,13 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Forcing redeployment of services..."
+          $namespace = "${{ steps.deployment-env.outputs.namespace }}"
+          $suffix = "${{ steps.deployment-env.outputs.deployment_suffix }}"
 
           # Restart deployments to ensure latest version is used
-          kubectl rollout restart deployment/user-service -n microservices
-          kubectl rollout restart deployment/order-service -n microservices
+          kubectl rollout restart deployment/user-service$suffix -n $namespace
+          kubectl rollout restart deployment/order-service$suffix -n $namespace
+          kubectl rollout restart deployment/frontend$suffix -n $namespace
 
           # For stateful applications like Kafka, we don't restart to avoid data loss
 
@@ -267,17 +361,22 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Verifying deployments..."
+          $namespace = "${{ steps.deployment-env.outputs.namespace }}"
+          $suffix = "${{ steps.deployment-env.outputs.deployment_suffix }}"
 
           # Vérification des pods sans échouer le workflow
-          Write-Host "Checking pod status:"
-          kubectl get pods -n microservices
+          Write-Host "Checking pod status in namespace: $namespace"
+          kubectl get pods -n $namespace
 
           # Afficher les détails des pods de services pour diagnostic
           Write-Host "User service pod details:"
-          kubectl describe pods -n microservices -l app=user-service
+          kubectl describe pods -n $namespace -l app=user-service$suffix
 
           Write-Host "Order service pod details:"
-          kubectl describe pods -n microservices -l app=order-service
+          kubectl describe pods -n $namespace -l app=order-service$suffix
+
+          Write-Host "Frontend pod details:"
+          kubectl describe pods -n $namespace -l app=frontend$suffix
 
           # Forcer le succès du job même si les services ne sont pas encore prêts
           Write-Host "Deployment verification completed - continuing regardless of readiness"
@@ -289,14 +388,14 @@ jobs:
           Write-Host "Checking service endpoints..."
 
           # List services
-          kubectl get services -n microservices
+          kubectl get services -n ${{ steps.deployment-env.outputs.namespace }}
 
           # Get ingress details 
-          kubectl get ingress -n microservices
+          kubectl get ingress -n ${{ steps.deployment-env.outputs.namespace }}
 
           # Check events for issues in the namespace
-          Write-Host "Checking events in microservices namespace..."
-          kubectl get events -n microservices
+          Write-Host "Checking events in ${{ steps.deployment-env.outputs.namespace }} namespace..."
+          kubectl get events -n ${{ steps.deployment-env.outputs.namespace }}
 
       - name: Check pod status and logs
         shell: powershell
@@ -305,25 +404,25 @@ jobs:
           Start-Sleep -Seconds 30
 
           Write-Host "Checking pod status..."
-          kubectl get pods -n microservices
+          kubectl get pods -n ${{ steps.deployment-env.outputs.namespace }}
 
           Write-Host "Checking user-service pods..."
-          $userPods = kubectl get pods -n microservices -l app=user-service -o jsonpath="{.items[*].metadata.name}"
+          $userPods = kubectl get pods -n ${{ steps.deployment-env.outputs.namespace }} -l app=user-service$suffix -o jsonpath="{.items[*].metadata.name}"
           if ($userPods) {
             foreach ($pod in $userPods.Split()) {
               Write-Host "Logs for ${pod}:"
-              kubectl logs ${pod} -n microservices --tail=50
+              kubectl logs ${pod} -n ${{ steps.deployment-env.outputs.namespace }} --tail=50
             }
           } else {
             Write-Host "No user-service pods found"
           }
 
           Write-Host "Checking order-service pods..."
-          $orderPods = kubectl get pods -n microservices -l app=order-service -o jsonpath="{.items[*].metadata.name}"
+          $orderPods = kubectl get pods -n ${{ steps.deployment-env.outputs.namespace }} -l app=order-service$suffix -o jsonpath="{.items[*].metadata.name}"
           if ($orderPods) {
             foreach ($pod in $orderPods.Split()) {
               Write-Host "Logs for ${pod}:"
-              kubectl logs ${pod} -n microservices --tail=50
+              kubectl logs ${pod} -n ${{ steps.deployment-env.outputs.namespace }} --tail=50
             }
           } else {
             Write-Host "No order-service pods found"
@@ -336,24 +435,24 @@ jobs:
           Start-Sleep -Seconds 360
 
           Write-Host "Checking pod status after waiting period:"
-          kubectl get pods -n microservices
+          kubectl get pods -n ${{ steps.deployment-env.outputs.namespace }}
 
           # Get pod creation timestamp and current time
           Write-Host "Pod ages:"
-          kubectl get pods -n microservices -o custom-columns=NAME:.metadata.name,CREATED:.metadata.creationTimestamp
+          kubectl get pods -n ${{ steps.deployment-env.outputs.namespace }} -o custom-columns=NAME:.metadata.name,CREATED:.metadata.creationTimestamp
 
           # Display pod logs for diagnostics
           Write-Host "Checking service logs:"
           Write-Host "User Service Logs:"
-          $userPod = kubectl get pods -n microservices -l app=user-service -o jsonpath="{.items[0].metadata.name}"
+          $userPod = kubectl get pods -n ${{ steps.deployment-env.outputs.namespace }} -l app=user-service$suffix -o jsonpath="{.items[0].metadata.name}"
           if ($userPod) {
-            kubectl logs -n microservices $userPod --tail=50
+            kubectl logs -n ${{ steps.deployment-env.outputs.namespace }} $userPod --tail=50
           }
 
           Write-Host "Order Service Logs:"
-          $orderPod = kubectl get pods -n microservices -l app=order-service -o jsonpath="{.items[0].metadata.name}"
+          $orderPod = kubectl get pods -n ${{ steps.deployment-env.outputs.namespace }} -l app=order-service$suffix -o jsonpath="{.items[0].metadata.name}"
           if ($orderPod) {
-            kubectl logs -n microservices $orderPod --tail=50
+            kubectl logs -n ${{ steps.deployment-env.outputs.namespace }} $orderPod --tail=50
           }
 
       - name: Validate Kubernetes manifests
@@ -414,6 +513,22 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Get branch name
+        id: branch
+        run: |
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "Branch name: $BRANCH_NAME"
+
+          # Set image tag based on branch
+          if [[ "$BRANCH_NAME" == feature/* ]]; then
+            # Convert feature/name to feature-name for tag
+            TAG_NAME=$(echo "$BRANCH_NAME" | sed 's/\//-/g')
+            echo "image_tag=$TAG_NAME" >> $GITHUB_OUTPUT
+          else
+            echo "image_tag=latest" >> $GITHUB_OUTPUT
+          fi
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
@@ -428,7 +543,7 @@ jobs:
         with:
           context: ./frontend
           push: true
-          tags: ${{ env.FRONTEND_IMAGE_NAME }}:${{ env.FRONTEND_IMAGE_TAG }}
+          tags: ${{ env.FRONTEND_IMAGE_NAME }}:${{ steps.branch.outputs.image_tag }}
           build-args: |
             VITE_ENVIRONMENT=kubernetes
             VITE_API_BASE_URL=http://api.microservices.local
