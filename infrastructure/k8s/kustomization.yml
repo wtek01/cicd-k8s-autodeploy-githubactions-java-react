@@ -22,3 +22,4 @@ labels:
   - includeSelectors: false
     pairs:
       app.kubernetes.io/part-of: microservices
+
