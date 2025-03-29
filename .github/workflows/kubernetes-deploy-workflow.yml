@@ -29,8 +29,21 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Display trigger information
+        run: |
+          Write-Host "Workflow triggered by: ${{ github.event_name }}"
+          if ('${{ github.event_name }}' -eq 'workflow_run') {
+            Write-Host "Triggered by workflow: ${{ github.event.workflow.name }}"
+            Write-Host "Workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
+            Write-Host "Workflow head branch: ${{ github.event.workflow_run.head_branch }}"
+          } else {
+            Write-Host "Direct trigger on branch: ${{ github.ref_name }}"
+          }
+
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.workflow_run.head_branch || github.ref }}
 
       - name: Get branch name
         id: branch
@@ -51,13 +64,22 @@ jobs:
           $branchName = '${{ steps.branch.outputs.name }}'
           $isFeatureBranch = $branchName -like 'feature/*'
 
+          Write-Host "Processing deployment for branch: $branchName (isFeature: $isFeatureBranch)"
+
           if ($isFeatureBranch) {
             # Convert feature/name to feature-name for namespace
             $namespace = "feature-" + $branchName.Substring(8).ToLower().Replace('/', '-')
+            $deploymentSuffix = "-$namespace"
+            $imageTag = $branchName.Replace('/', '-')
+            
             echo "namespace=$namespace" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            echo "deployment_suffix=-$namespace" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            echo "image_tag=$($branchName.Replace('/', '-'))" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            Write-Host "Feature branch deployment to namespace: $namespace"
+            echo "deployment_suffix=$deploymentSuffix" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            echo "image_tag=$imageTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            
+            Write-Host "Feature branch deployment details:"
+            Write-Host "  Namespace: $namespace"
+            Write-Host "  Suffix: $deploymentSuffix"
+            Write-Host "  Image Tag: $imageTag"
           } else {
             echo "namespace=microservices" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             echo "deployment_suffix=" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
@@ -508,10 +530,39 @@ jobs:
             Write-Host "Kubernetes connection is not established."
           }
 
+      - name: Generate deployment summary
+        shell: powershell
+        run: |
+          $branchName = "${{ steps.branch.outputs.name }}"
+          $namespace = "${{ steps.deployment-env.outputs.namespace }}"
+          $isFeatureBranch = $branchName -like 'feature/*'
+
+          Write-Host "::group::Deployment Summary"
+          Write-Host "Deployment for branch: $branchName completed"
+          Write-Host "Namespace: $namespace"
+
+          if ($isFeatureBranch) {
+            $apiHost = "api-$namespace.microservices.local"
+            $frontendHost = "frontend-$namespace.microservices.local"
+            Write-Host "API Endpoint: http://$apiHost"
+            Write-Host "Frontend URL: http://$frontendHost"
+            Write-Host "To access these URLs, add the following to your hosts file:"
+            Write-Host "127.0.0.1 $apiHost $frontendHost"
+          } else {
+            Write-Host "API Endpoint: http://api.microservices.local"
+            Write-Host "Frontend URL: http://frontend.microservices.local"
+          }
+
+          Write-Host "Services deployed:"
+          kubectl get pods -n $namespace
+          Write-Host "::endgroup::"
+
   build-and-push:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.workflow_run.head_branch || github.ref }}
 
       - name: Get branch name
         id: branch

@@ -258,3 +258,33 @@ jobs:
           } else {
             Write-Host "Skipping commit for feature branch: $branchName"
           }
+
+  trigger-deployment:
+    needs: update-k8s-manifests
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Get branch name
+        id: branch
+        run: echo "name=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+
+      - name: Trigger deployment workflow
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const branch = '${{ steps.branch.outputs.name }}';
+            console.log(`Attempting to trigger deployment for branch: ${branch}`);
+
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'kubernetes-deploy-workflow.yml',
+                ref: branch
+              });
+              console.log('Successfully triggered deployment workflow');
+            } catch (error) {
+              console.error('Failed to trigger deployment workflow:', error);
+              core.setFailed('Failed to trigger deployment workflow');
+            }
