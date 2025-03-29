@@ -170,24 +170,28 @@ jobs:
           fi
 
   update-k8s-manifests:
-    needs: build-and-push-images
     runs-on: self-hosted
+    needs: build-and-push-images
+    outputs:
+      version: ${{ steps.set-version.outputs.version }}
+      branch: ${{ steps.get-branch.outputs.name }}
     permissions:
       contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          ref: feature/frontend-k8s-deployment
 
-      - name: Generate frontend version
-        id: frontend-version
+      - name: Set frontend version timestamp
+        id: set-version
         run: |
           $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
           echo "version=$timestamp" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           echo "Using frontend version: $timestamp"
 
-      - name: Extract version from pom.xml for backend services
-        id: get-version
-        shell: powershell
+      - name: Get backend version
+        id: get-backend-version
         run: |
           $versionLine = Select-String -Path backend/pom.xml -Pattern "<version>(.*?)</version>" | Select-Object -First 1
           $version = $versionLine -replace ".*<version>(.*?)</version>.*", '$1'
@@ -196,17 +200,16 @@ jobs:
           echo "Using version: $version"
 
       - name: Get branch name
-        id: branch
+        id: get-branch
         run: |
-          $branchName = "${{ github.ref_name }}"
+          $branchName = "feature/frontend-k8s-deployment"
           echo "name=$branchName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           echo "Using branch: $branchName"
 
       - name: Update Kubernetes manifests
-        shell: powershell
         run: |
           # Get branch name
-          $branchName = "${{ steps.branch.outputs.name }}"
+          $branchName = "feature/frontend-k8s-deployment"
           $isFeatureBranch = $branchName -like 'feature/*'
 
           # Create deployment suffix for feature branches
@@ -215,49 +218,60 @@ jobs:
             $deploymentSuffix = "-" + $branchName.Replace('/', '-')
           }
 
-          # Update backend service manifests
-          (Get-Content infrastructure/k8s/user-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/user-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/user-service.yml
-          (Get-Content infrastructure/k8s/order-service.yml) -replace "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:.*", "image: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:${{ steps.get-version.outputs.version }}" | Set-Content infrastructure/k8s/order-service.yml
-
-          # Create a temporary deployment file with the correct version
-          $version = "${{ steps.frontend-version.outputs.version }}"
-          $deployment = Get-Content infrastructure/k8s/frontend-deployment.yml -Raw
-          $deployment = $deployment.Replace('${VERSION}', $version)
-
-          # For feature branches, update the name to avoid conflicts with main deployments
+          # Set the namespace based on branch
+          $namespace = "microservices"
           if ($isFeatureBranch) {
-            $deployment = $deployment -replace "name: frontend", "name: frontend$deploymentSuffix"
-            $deployment = $deployment -replace "app: frontend", "app: frontend$deploymentSuffix"
+            $namespace = "feature-" + $branchName.Substring(8).ToLower().Replace('/', '-')
           }
 
-          $deployment | Set-Content "temp-frontend-deployment.yml"
+          Write-Host "Updating Kubernetes manifests with namespace: $namespace"
+          Write-Host "Deployment suffix: $deploymentSuffix"
 
-          # Apply the deployment with the correct version
-          kubectl apply -f temp-frontend-deployment.yml
+          # Update backend service manifests
+          (Get-Content infrastructure/k8s/user-service.yml) -replace "image: wtek01/user-service:.*", "image: wtek01/user-service:0.3.0" | Set-Content infrastructure/k8s/user-service.yml
+          (Get-Content infrastructure/k8s/order-service.yml) -replace "image: wtek01/order-service:.*", "image: wtek01/order-service:0.3.0" | Set-Content infrastructure/k8s/order-service.yml
 
-          # Clean up
-          Remove-Item temp-frontend-deployment.yml
+          # Get frontend version
+          $version = "20250329-120307"
+          Write-Host "Using frontend version: $version"
 
-      - name: Skip commit for frontend deployment
-        shell: powershell
-        run: |
-          $branchName = "${{ steps.branch.outputs.name }}"
+          # Process and update all YAML files to replace namespace variables
+          $files = Get-ChildItem -Path infrastructure/k8s -Filter "*.yml"
+          foreach ($file in $files) {
+            Write-Host "Processing $($file.Name)..."
+            $content = Get-Content $file.FullName -Raw
 
-          # Only commit changes when on main branch
-          if ($branchName -eq "main" -or $branchName -eq "master") {
-            git config --local user.email "wtek01@gmail.com"
-            git config --local user.name "GitHub Actions Bot"
-            git add infrastructure/k8s/user-service.yml infrastructure/k8s/order-service.yml
-
-            # Try to commit only backend changes
-            $commitOutput = git commit -m "ci: update backend service manifests with new image versions" 2>&1
-            if ($commitOutput -match "nothing to commit" -or $LASTEXITCODE -eq 0) {
-                Write-Host "Commit successful or nothing to commit"
-                git push origin $branchName
+            # Replace namespace placeholder
+            if ($content -match '\${NAMESPACE}') {
+              Write-Host "  Replacing \${NAMESPACE} with $namespace"
+              $content = $content.Replace('${NAMESPACE}', $namespace)
             }
-          } else {
-            Write-Host "Skipping commit for feature branch: $branchName"
+
+            # Replace version placeholder in frontend-deployment.yml
+            if ($file.Name -eq "frontend-deployment.yml" -and $content -match '\${VERSION}') {
+              Write-Host "  Replacing \${VERSION} with $version"
+              $content = $content.Replace('${VERSION}', $version)
+
+              # For feature branches, update the name to avoid conflicts with main deployments
+              if ($isFeatureBranch) {
+                Write-Host "  Updating frontend service names with suffix: $deploymentSuffix"
+                $content = $content -replace "name: frontend(\s|$)", "name: frontend$deploymentSuffix`$1"
+                $content = $content -replace "app: frontend(\s|$)", "app: frontend$deploymentSuffix`$1"
+              }
+            }
+
+            # Save changes back to the file
+            Set-Content -Path $file.FullName -Value $content
+            Write-Host "  Updated $($file.Name)"
           }
+
+          # Commit changes back to the repository
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+          git add infrastructure/k8s/*.yml
+          git commit -m "ci: update Kubernetes manifests with version $version and namespace $namespace [skip ci]"
+          git push
 
   trigger-deployment:
     needs: update-k8s-manifests
