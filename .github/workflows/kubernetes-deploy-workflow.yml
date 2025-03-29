@@ -7,6 +7,11 @@ on:
     paths:
       - "infrastructure/k8s/**" # Se déclenche sur les modifications des fichiers dans le dossier k8s
   workflow_dispatch: # Pour déclencher manuellement le workflow
+    inputs:
+      branch:
+        description: "Branch to deploy"
+        required: false
+        default: ""
   workflow_run:
     workflows: ["Build and Publish"]
     types:
@@ -36,6 +41,8 @@ jobs:
             Write-Host "Triggered by workflow: ${{ github.event.workflow.name }}"
             Write-Host "Workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
             Write-Host "Workflow head branch: ${{ github.event.workflow_run.head_branch }}"
+          } elseif ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            Write-Host "Workflow dispatch with branch: ${{ github.event.inputs.branch || github.ref_name }}"
           } else {
             Write-Host "Direct trigger on branch: ${{ github.ref_name }}"
           }
@@ -43,7 +50,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          ref: ${{ github.event.workflow_run.head_branch || github.ref }}
+          ref: ${{ github.event.inputs.branch || github.event.workflow_run.head_branch || github.ref }}
 
       - name: Get branch name
         id: branch
@@ -51,8 +58,11 @@ jobs:
           if ('${{ github.event_name }}' -eq 'workflow_run') {
             # For workflow_run events, get the branch that triggered the workflow
             $branchName = '${{ github.event.workflow_run.head_branch }}'
+          } elseif ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ github.event.inputs.branch }}' -ne '') {
+            # For workflow_dispatch events with branch input
+            $branchName = '${{ github.event.inputs.branch }}'
           } else {
-            # For push and workflow_dispatch events, use ref_name
+            # For push and workflow_dispatch events without branch input, use ref_name
             $branchName = '${{ github.ref_name }}'
           }
           Write-Host "Branch name: $branchName"
@@ -562,12 +572,22 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          ref: ${{ github.event.workflow_run.head_branch || github.ref }}
+          ref: ${{ github.event.inputs.branch || github.event.workflow_run.head_branch || github.ref }}
 
       - name: Get branch name
         id: branch
         run: |
-          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.branch }}" != "" ]]; then
+            # For workflow_dispatch events with branch input
+            BRANCH_NAME="${{ github.event.inputs.branch }}"
+          elif [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            # For workflow_run events
+            BRANCH_NAME="${{ github.event.workflow_run.head_branch }}"
+          else
+            # For direct push or workflow_dispatch without branch input
+            BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          fi
+
           echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           echo "Branch name: $BRANCH_NAME"
 
