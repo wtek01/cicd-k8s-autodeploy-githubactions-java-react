@@ -26,6 +26,7 @@ env:
   USER_SERVICE_IMAGE_TAG: 0.3.0
   ORDER_SERVICE_IMAGE_NAME: wtek01/order-service
   ORDER_SERVICE_IMAGE_TAG: 0.3.0
+  DOCKERHUB_USERNAME: wtek01
 
 jobs:
   deploy:
@@ -289,6 +290,27 @@ jobs:
             $frontendConfigYaml = $frontendConfigYaml -replace 'app: frontend', "app: frontend$suffix"
             $frontendConfigYaml | Out-File -FilePath "temp-frontend-config.yml" -Encoding utf8
             kubectl apply -f temp-frontend-config.yml
+
+            # Create explicit ConfigMap with all required variables for frontend using kubectl create command
+            Write-Host "Creating explicit frontend ConfigMap with all required variables..."
+            $configMapName = "frontend$suffix-config"
+            
+            # Check if ConfigMap exists and delete it if it does
+            $cmExists = kubectl get configmap $configMapName -n $namespace --ignore-not-found
+            if ($cmExists) {
+              Write-Host "ConfigMap $configMapName already exists, deleting it..."
+              kubectl delete configmap $configMapName -n $namespace
+            }
+            
+            # Create the ConfigMap using kubectl command
+            kubectl create configmap $configMapName `
+              --namespace=$namespace `
+              --from-literal=VITE_API_BASE_URL="http://$apiHost" `
+              --from-literal=VITE_USER_SERVICE_URL="http://$apiHost/users" `
+              --from-literal=VITE_ORDER_SERVICE_URL="http://$apiHost/orders"
+            
+            # Add a label to the ConfigMap
+            kubectl label configmap $configMapName app=frontend$suffix -n $namespace
             
             # Process and apply frontend-deployment
             Write-Host "Processing frontend-deployment manifest..."
@@ -297,6 +319,10 @@ jobs:
             $frontendDeploymentYaml = $frontendDeploymentYaml.Replace('${VERSION}', $imageTag)
             $frontendDeploymentYaml = $frontendDeploymentYaml -replace 'name: frontend', "name: frontend$suffix"
             $frontendDeploymentYaml = $frontendDeploymentYaml -replace 'app: frontend', "app: frontend$suffix"
+            
+            # Fix the ConfigMap reference in the frontend deployment
+            $frontendDeploymentYaml = $frontendDeploymentYaml -replace 'frontend-config', "frontend$suffix-config"
+            
             $frontendDeploymentYaml | Out-File -FilePath "temp-frontend-deployment.yml" -Encoding utf8
             kubectl apply -f temp-frontend-deployment.yml
             
