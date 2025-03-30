@@ -143,7 +143,7 @@ jobs:
                 return $false
               }
             } catch {
-              Write-Host "❌ Error checking image $image: $_"
+              Write-Host "❌ Error checking image $image`: $($_.Exception.Message)"
               return $false
             }
           }
