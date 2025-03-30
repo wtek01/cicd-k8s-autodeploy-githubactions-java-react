@@ -8,3 +8,4 @@ data:
   VITE_ORDER_SERVICE_URL: "http://order-service.microservices.svc.cluster.local"
   VITE_API_BASE_URL: "http://api-gateway.microservices.svc.cluster.local"
 
+
