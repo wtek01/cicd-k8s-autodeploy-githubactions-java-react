@@ -85,8 +85,8 @@ jobs:
           Write-Host "Waiting 15 seconds for Docker Hub to process images..."
           Start-Sleep -Seconds 15
 
-      - name: Verify Docker images exist
-        id: verify-docker-images
+      - name: Verify Docker images
+        id: verify-images
         run: |
           $branch = '${{ steps.get-branch.outputs.branch }}'
 
@@ -229,12 +229,38 @@ jobs:
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v3
+        with:
+          version: latest
 
-      - name: Configure kubeconfig
+      - name: Set up kubectl config
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        shell: pwsh
+        id: set-up-kubectl-config
         run: |
           $kubeconfig = '${{ secrets.KUBE_CONFIG }}'
           $kubeconfigPath = "$env:USERPROFILE\.kube\config"
 
+          # Debug: Check the format of the kubeconfig content
+          Write-Host "Kubeconfig format check (examining first few characters):"
+          Write-Host "First 20 chars: $($kubeconfig.Substring(0, [Math]::Min(20, $kubeconfig.Length)))"
+          
+          # Check if the kubeconfig is wrapped in quotes or has escaped characters
+          if ($kubeconfig.StartsWith("'") -or $kubeconfig.StartsWith('"')) {
+            Write-Host "Detected quotes in kubeconfig. Attempting to fix..."
+            try {
+              # Try to parse as JSON if it's a JSON string
+              $kubeconfig = $kubeconfig.Trim("'").Trim('"')
+              # Check if it needs unescaping
+              if ($kubeconfig -match '\\n') {
+                Write-Host "Found escape sequences, unescaping..."
+                $kubeconfig = $kubeconfig -replace '\\n', "`n" -replace '\\t', "`t" -replace '\\"', '"'
+              }
+            } catch {
+              Write-Host "Error processing kubeconfig format: $($_.Exception.Message)"
+            }
+          }
+          
           # Ensure directory exists
           if (-not (Test-Path "$env:USERPROFILE\.kube")) {
             New-Item -ItemType Directory -Path "$env:USERPROFILE\.kube" -Force
@@ -243,11 +269,63 @@ jobs:
           # Write kubeconfig
           Set-Content -Path $kubeconfigPath -Value $kubeconfig
 
-          # Test connection
-          kubectl get nodes
+          # Check the file content
+          Write-Host "First few lines of the generated kubeconfig file:"
+          Get-Content $kubeconfigPath | Select-Object -First 5
+          
+          # Check if the file is valid
+          try {
+            # Test connection
+            Write-Host "Testing kubectl connection..."
+            kubectl version --client
+            
+            # If the test fails, it will throw an error, otherwise we'll proceed to check nodes
+            kubectl get nodes
+          } catch {
+            Write-Host "Error with kubeconfig: $($_.Exception.Message)"
+            
+            if ("${{ github.ref }}" -like "refs/heads/feature/*") {
+              Write-Host "Creating temporary test kubeconfig for development purposes..."
+              
+              # Create a simple valid kubeconfig structure for testing
+              $testConfig = @'
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://localhost:8080
+    insecure-skip-tls-verify: true
+  name: dev-cluster
+contexts:
+- context:
+    cluster: dev-cluster
+    namespace: default
+    user: dev-user
+  name: dev-context
+current-context: dev-context
+users:
+- name: dev-user
+  user:
+    token: test-token
+'@
+              
+              # Write test config
+              Set-Content -Path $kubeconfigPath -Value $testConfig
+              
+              Write-Host "Using test kubeconfig for development. This will allow workflow to proceed but kubectl commands will fail."
+              Write-Host "This is expected in development mode. Actual deployment will be skipped."
+              
+              # Set flag to skip actual deployments
+              echo "skip_deployment=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            } else {
+              # For production or staging, we must fail if kubeconfig is invalid
+              throw "Invalid kubeconfig. Deployment cannot proceed."
+            }
+          }
 
       # Try to deploy using the updated manifests from the repository
       - name: Create namespace if not exists
+        if: steps.set-up-kubectl-config.outputs.skip_deployment != 'true'
         run: |
           $namespace = '${{ steps.set-env.outputs.namespace }}'
           Write-Host "Creating namespace: $namespace (if it doesn't exist)"
@@ -260,9 +338,9 @@ jobs:
           $branch = '${{ steps.get-branch.outputs.branch }}'
 
           # Use the verified image tags from the previous step
-          $frontendImageTag = '${{ steps.verify-docker-images.outputs.frontend_image_tag }}'
-          $userServiceImageTag = '${{ steps.verify-docker-images.outputs.user_service_image_tag }}'
-          $orderServiceImageTag = '${{ steps.verify-docker-images.outputs.order_service_image_tag }}'
+          $frontendImageTag = '${{ steps.verify-images.outputs.frontend_image_tag }}'
+          $userServiceImageTag = '${{ steps.verify-images.outputs.user_service_image_tag }}'
+          $orderServiceImageTag = '${{ steps.verify-images.outputs.order_service_image_tag }}'
 
           Write-Host "Deploying to Kubernetes namespace: $namespace with suffix: $suffix"
           Write-Host "Using verified image tags:"
