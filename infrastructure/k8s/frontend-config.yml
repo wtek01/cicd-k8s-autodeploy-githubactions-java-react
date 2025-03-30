@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: frontend-config
-  namespace: ${NAMESPACE}
+  namespace: feature-frontend-k8s-deployment
   labels:
     app: frontend
 data:
@@ -38,3 +38,4 @@ data:
         }
     }
   # Add any other frontend configuration as needed
+

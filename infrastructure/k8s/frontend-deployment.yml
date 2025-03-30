@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: frontend
-  namespace: ${NAMESPACE}
+  name: frontend-feature-frontend-k8s-deployment
+  namespace: feature-frontend-k8s-deployment
   labels:
-    app: frontend
+    app: frontend-feature-frontend-k8s-deployment
 spec:
   replicas: 1
   strategy:
@@ -14,17 +14,17 @@ spec:
       maxUnavailable: 0
   selector:
     matchLabels:
-      app: frontend
+      app: frontend-feature-frontend-k8s-deployment
   template:
     metadata:
       labels:
-        app: frontend
+        app: frontend-feature-frontend-k8s-deployment
       annotations:
-        checksum/config: "${VERSION}"
+        checksum/config: "20250329-120307"
     spec:
       containers:
-        - name: frontend
-          image: wtek01/frontend:${VERSION}
+        - name: frontend-feature-frontend-k8s-deployment
+          image: wtek01/frontend:20250329-120307
           imagePullPolicy: Always
           envFrom:
             - configMapRef:
@@ -101,15 +101,16 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: frontend
-  namespace: ${NAMESPACE}
+  name: frontend-feature-frontend-k8s-deployment
+  namespace: feature-frontend-k8s-deployment
   labels:
-    app: frontend
+    app: frontend-feature-frontend-k8s-deployment
 spec:
   selector:
-    app: frontend
+    app: frontend-feature-frontend-k8s-deployment
   ports:
     - port: 80
       targetPort: 80
       name: http
   type: ClusterIP
+
