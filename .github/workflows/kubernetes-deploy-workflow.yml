@@ -375,7 +375,7 @@ jobs:
             kubectl rollout restart deployment user-service$suffix -n $namespace
             Write-Host "✅ user-service$suffix restarted successfully"
           } catch {
-            Write-Host "⚠️ Warning: Failed to restart user-service$suffix: $_"
+            Write-Host "⚠️ Warning: Failed to restart user-service$suffix`: $($_.Exception.Message)"
           }
 
           # Restart Order Service
@@ -384,7 +384,7 @@ jobs:
             kubectl rollout restart deployment order-service$suffix -n $namespace
             Write-Host "✅ order-service$suffix restarted successfully"
           } catch {
-            Write-Host "⚠️ Warning: Failed to restart order-service$suffix: $_"
+            Write-Host "⚠️ Warning: Failed to restart order-service$suffix`: $($_.Exception.Message)"
           }
 
           # Restart Frontend
@@ -393,7 +393,7 @@ jobs:
             kubectl rollout restart deployment frontend$suffix -n $namespace
             Write-Host "✅ frontend$suffix restarted successfully"
           } catch {
-            Write-Host "⚠️ Warning: Failed to restart frontend$suffix: $_"
+            Write-Host "⚠️ Warning: Failed to restart frontend$suffix`: $($_.Exception.Message)"
           }
 
           Write-Host "Waiting for services to stabilize..."
