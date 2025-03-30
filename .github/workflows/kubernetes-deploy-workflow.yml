@@ -27,6 +27,8 @@ env:
   ORDER_SERVICE_IMAGE_NAME: wtek01/order-service
   ORDER_SERVICE_IMAGE_TAG: 0.3.0
   DOCKERHUB_USERNAME: wtek01
+  # Changed to never skip verification on any branch to ensure proper testing
+  SKIP_DOCKER_VERIFICATION: "false"
 
 jobs:
   deploy-k8s:
@@ -84,62 +86,96 @@ jobs:
           Start-Sleep -Seconds 15
 
       - name: Verify Docker images exist
+        id: verify-docker-images
         run: |
+          $branch = '${{ steps.get-branch.outputs.branch }}'
+
+          # Always verify images to prevent untested code from reaching any environment
+          Write-Host "Verifying Docker images for $branch branch"
+
           $username = "${{ env.DOCKERHUB_USERNAME }}"
-          $frontendImage = "${{ env.FRONTEND_IMAGE_NAME }}:${{ env.FRONTEND_IMAGE_TAG }}"
-          $userServiceImage = "${{ env.USER_SERVICE_IMAGE_NAME }}:${{ env.USER_SERVICE_IMAGE_TAG }}"
-          $orderServiceImage = "${{ env.ORDER_SERVICE_IMAGE_NAME }}:${{ env.ORDER_SERVICE_IMAGE_TAG }}"
+          $password = "${{ secrets.DOCKERHUB_TOKEN }}"
 
-          Write-Host "Checking if Docker images exist in Docker Hub..."
+          # Determine which images to verify based on branch
+          if ($branch -like "feature/*") {
+            # For feature branches, we need to verify the feature-specific images
+            # Extract the feature branch name for dynamic image tags
+            $featureName = $branch.Substring(8).ToLower()
+            
+            # The build workflow should tag images for feature branches as {original-tag}-{feature-name}
+            # For example: 0.3.1-frontend-k8s-deployment 
+            $frontendImageTag = "${{ env.FRONTEND_IMAGE_TAG }}-$featureName"
+            $userServiceImageTag = "${{ env.USER_SERVICE_IMAGE_TAG }}-$featureName"
+            $orderServiceImageTag = "${{ env.ORDER_SERVICE_IMAGE_TAG }}-$featureName"
+          } else {
+            # For main/production or other branches, use the standard tags
+            $frontendImageTag = "${{ env.FRONTEND_IMAGE_TAG }}"
+            $userServiceImageTag = "${{ env.USER_SERVICE_IMAGE_TAG }}"
+            $orderServiceImageTag = "${{ env.ORDER_SERVICE_IMAGE_TAG }}"
+          }
 
-          function Check-DockerImage {
+          $frontendImage = "${{ env.FRONTEND_IMAGE_NAME }}:$frontendImageTag"
+          $userServiceImage = "${{ env.USER_SERVICE_IMAGE_NAME }}:$userServiceImageTag"
+          $orderServiceImage = "${{ env.ORDER_SERVICE_IMAGE_NAME }}:$orderServiceImageTag"
+
+          Write-Host "Checking images:"
+          Write-Host "- $frontendImage"
+          Write-Host "- $userServiceImage"
+          Write-Host "- $orderServiceImage"
+
+          # Alternative approach - use docker CLI which already has auth from docker login
+          function Check-DockerImageCLI {
             param (
               [string]$image
             )
             
-            $imageRepo = $image.Split(':')[0]
-            $imageTag = $image.Split(':')[1]
-            
             try {
-              # Use Docker Hub API to check if image exists
-              $token = Invoke-RestMethod -Uri "https://auth.docker.io/token?service=registry.docker.io&scope=repository:$imageRepo:pull" -Method Get
-              $headers = @{
-                "Authorization" = "Bearer $($token.token)"
-              }
+              # Login to Docker Hub
+              docker login -u "$username" -p "$password" docker.io
               
-              $response = Invoke-RestMethod -Uri "https://registry.hub.docker.com/v2/$imageRepo/manifests/$imageTag" -Headers $headers -Method Get -ErrorAction SilentlyContinue
-              if ($response) {
+              # Try to pull the image manifest
+              $result = docker manifest inspect $image 2>&1
+              if ($LASTEXITCODE -eq 0) {
                 Write-Host "✅ Image $image exists in Docker Hub"
                 return $true
+              } else {
+                Write-Host "❌ Image $image not found in Docker Hub: $result"
+                return $false
               }
             } catch {
-              Write-Host "❌ Image $image not found in Docker Hub: $_"
+              Write-Host "❌ Error checking image $image: $_"
               return $false
             }
-            
-            return $false
           }
 
-          $frontendExists = Check-DockerImage -image $frontendImage
-          $userServiceExists = Check-DockerImage -image $userServiceImage
-          $orderServiceExists = Check-DockerImage -image $orderServiceImage
+          Write-Host "Using Docker CLI to verify images..."
+          $frontendExists = Check-DockerImageCLI -image $frontendImage
+          $userServiceExists = Check-DockerImageCLI -image $userServiceImage
+          $orderServiceExists = Check-DockerImageCLI -image $orderServiceImage
 
           if (-not ($frontendExists -and $userServiceExists -and $orderServiceExists)) {
             Write-Host "One or more required Docker images not found in Docker Hub."
             Write-Host "Waiting additional 30 seconds and retrying..."
             Start-Sleep -Seconds 30
             
-            $frontendExists = Check-DockerImage -image $frontendImage
-            $userServiceExists = Check-DockerImage -image $userServiceImage
-            $orderServiceExists = Check-DockerImage -image $orderServiceImage
+            $frontendExists = Check-DockerImageCLI -image $frontendImage
+            $userServiceExists = Check-DockerImageCLI -image $userServiceImage
+            $orderServiceExists = Check-DockerImageCLI -image $orderServiceImage
             
             if (-not ($frontendExists -and $userServiceExists -and $orderServiceExists)) {
-              Write-Error "Required Docker images not available after retry. Deployment failed."
+              Write-Error "Required Docker images not available. Deployment failed."
+              Write-Host "Please make sure you have run the CI workflow to build and push the required images before deploying."
+              Write-Host "For feature branches, images should be tagged with the feature branch name."
               exit 1
             }
           }
 
-          Write-Host "All required Docker images verified successfully!"
+          # Set the verified image tags as outputs for use in deployment
+          echo "frontend_image_tag=$frontendImageTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          echo "user_service_image_tag=$userServiceImageTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          echo "order_service_image_tag=$orderServiceImageTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+          Write-Host "All Docker images verified successfully!"
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v3
@@ -173,7 +209,16 @@ jobs:
           $suffix = '${{ steps.set-env.outputs.suffix }}'
           $branch = '${{ steps.get-branch.outputs.branch }}'
 
+          # Use the verified image tags from the previous step
+          $frontendImageTag = '${{ steps.verify-docker-images.outputs.frontend_image_tag }}'
+          $userServiceImageTag = '${{ steps.verify-docker-images.outputs.user_service_image_tag }}'
+          $orderServiceImageTag = '${{ steps.verify-docker-images.outputs.order_service_image_tag }}'
+
           Write-Host "Deploying to Kubernetes namespace: $namespace with suffix: $suffix"
+          Write-Host "Using verified image tags:"
+          Write-Host "- Frontend: $frontendImageTag"
+          Write-Host "- User Service: $userServiceImageTag"
+          Write-Host "- Order Service: $orderServiceImageTag"
 
           # First, check if we have a kustomize overlay for this branch
           if (Test-Path "infrastructure/k8s/overlays/$branch") {
@@ -196,8 +241,8 @@ jobs:
               
               # Replace version placeholder in frontend-deployment.yml
               if ($file.Name -eq "frontend-deployment.yml" -and $content -match '\${VERSION}') {
-                Write-Host "  Replacing \${VERSION} with ${{ env.FRONTEND_IMAGE_TAG }} in $($file.Name)"
-                $content = $content.Replace('${VERSION}', '${{ env.FRONTEND_IMAGE_TAG }}')
+                Write-Host "  Replacing \${VERSION} with $frontendImageTag in $($file.Name)"
+                $content = $content.Replace('${VERSION}', $frontendImageTag)
                 
                 # If we have a suffix, also update the ConfigMap reference
                 if ($suffix) {
@@ -211,6 +256,18 @@ jobs:
                   $content = $content -replace "name: frontend(\s|$)", "name: frontend$suffix`$1"
                   $content = $content -replace "app: frontend(\s|$)", "app: frontend$suffix`$1"
                 }
+              }
+              
+              # Update user-service image
+              if ($file.Name -eq "user-service.yml" -and $content -match 'image: wtek01/user-service:') {
+                Write-Host "  Updating user-service image to use tag: $userServiceImageTag"
+                $content = $content -replace "image: wtek01/user-service:[^\"'\s]+", "image: wtek01/user-service:$userServiceImageTag"
+              }
+              
+              # Update order-service image
+              if ($file.Name -eq "order-service.yml" -and $content -match 'image: wtek01/order-service:') {
+                Write-Host "  Updating order-service image to use tag: $orderServiceImageTag"
+                $content = $content -replace "image: wtek01/order-service:[^\"'\s]+", "image: wtek01/order-service:$orderServiceImageTag"
               }
               
               # Replace other variables if they exist
