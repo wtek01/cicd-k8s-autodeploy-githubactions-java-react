@@ -276,19 +276,21 @@ jobs:
   trigger-deployment:
     needs: update-k8s-manifests
     runs-on: ubuntu-latest
-    if: success()
     permissions:
-      contents: read
       actions: write
+      contents: read
     steps:
       - name: Get branch name
         id: branch
         run: echo "name=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
 
-      - name: Manual Workflow Dispatch
+      - name: Trigger Kubernetes deployment
         uses: benc-uk/workflow-dispatch@v1
         with:
-          workflow: Deploy to Kubernetes
-          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          workflow: kubernetes-deploy-workflow.yml
+          token: ${{ secrets.GITHUB_TOKEN }}
           ref: ${{ steps.branch.outputs.name }}
-          inputs: '{"branch": "${{ steps.branch.outputs.name }}"}'
+          inputs: |
+            {
+              "branch": "${{ steps.branch.outputs.name }}"
+            }

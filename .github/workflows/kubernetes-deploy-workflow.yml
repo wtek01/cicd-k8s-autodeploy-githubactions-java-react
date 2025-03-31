@@ -244,7 +244,7 @@ jobs:
           # Debug: Check the format of the kubeconfig content
           Write-Host "Kubeconfig format check (examining first few characters):"
           Write-Host "First 20 chars: $($kubeconfig.Substring(0, [Math]::Min(20, $kubeconfig.Length)))"
-          
+
           # Check if the kubeconfig is wrapped in quotes or has escaped characters
           if ($kubeconfig.StartsWith("'") -or $kubeconfig.StartsWith('"')) {
             Write-Host "Detected quotes in kubeconfig. Attempting to fix..."
@@ -260,7 +260,7 @@ jobs:
               Write-Host "Error processing kubeconfig format: $($_.Exception.Message)"
             }
           }
-          
+
           # Ensure directory exists
           if (-not (Test-Path "$env:USERPROFILE\.kube")) {
             New-Item -ItemType Directory -Path "$env:USERPROFILE\.kube" -Force
@@ -272,7 +272,7 @@ jobs:
           # Check the file content
           Write-Host "First few lines of the generated kubeconfig file:"
           Get-Content $kubeconfigPath | Select-Object -First 5
-          
+
           # Check if the file is valid
           try {
             # Test connection
@@ -288,29 +288,7 @@ jobs:
               Write-Host "Creating temporary test kubeconfig for development purposes..."
               
               # Create a simple valid kubeconfig structure for testing
-              $testConfig = @'
-apiVersion: v1
-kind: Config
-clusters:
-- cluster:
-    server: https://localhost:8080
-    insecure-skip-tls-verify: true
-  name: dev-cluster
-contexts:
-- context:
-    cluster: dev-cluster
-    namespace: default
-    user: dev-user
-  name: dev-context
-current-context: dev-context
-users:
-- name: dev-user
-  user:
-    token: test-token
-'@
-              
-              # Write test config
-              Set-Content -Path $kubeconfigPath -Value $testConfig
+              Set-Content -Path $kubeconfigPath -Value "apiVersion: v1`nkind: Config`nclusters:`n- cluster:`n    server: https://localhost:8080`n    insecure-skip-tls-verify: true`n  name: dev-cluster`ncontexts:`n- context:`n    cluster: dev-cluster`n    namespace: default`n    user: dev-user`n  name: dev-context`ncurrent-context: dev-context`nusers:`n- name: dev-user`n  user:`n    token: test-token"
               
               Write-Host "Using test kubeconfig for development. This will allow workflow to proceed but kubectl commands will fail."
               Write-Host "This is expected in development mode. Actual deployment will be skipped."
