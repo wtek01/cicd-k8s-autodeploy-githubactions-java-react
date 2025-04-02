@@ -233,12 +233,10 @@ jobs:
           version: latest
 
       - name: Set up kubectl config
-        env:
-          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
         shell: powershell
-        id: set-up-kubectl-config
         run: |
-          $kubeconfig = '${{ secrets.KUBE_CONFIG }}'
+          # Decode base64 kubeconfig
+          $kubeconfig = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${{ secrets.KUBE_CONFIG }}'))
           $kubeconfigPath = "$env:USERPROFILE\.kube\config"
 
           # Debug: Check the format of the kubeconfig content
