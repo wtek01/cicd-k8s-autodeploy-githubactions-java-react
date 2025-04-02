@@ -235,7 +235,7 @@ jobs:
       - name: Set up kubectl config
         env:
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-        shell: pwsh
+        shell: powershell
         id: set-up-kubectl-config
         run: |
           $kubeconfig = '${{ secrets.KUBE_CONFIG }}'
