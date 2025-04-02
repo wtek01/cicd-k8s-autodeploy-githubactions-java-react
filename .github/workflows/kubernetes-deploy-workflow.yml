@@ -264,7 +264,23 @@ jobs:
             New-Item -ItemType Directory -Path "$env:USERPROFILE\.kube" -Force
           }
 
-          # Write kubeconfig
+          # Write kubeconfig with proper YAML formatting
+          $kubeconfig = $kubeconfig -replace 'clusters:', "`nclusters:" `
+                                  -replace 'contexts:', "`ncontexts:" `
+                                  -replace 'users:', "`nusers:" `
+                                  -replace 'current-context:', "`ncurrent-context:" `
+                                  -replace 'kind:', "`nkind:" `
+                                  -replace 'preferences:', "`npreferences:" `
+                                  -replace 'name:', "`n  name:" `
+                                  -replace 'cluster:', "`n    cluster:" `
+                                  -replace 'user:', "`n    user:" `
+                                  -replace 'server:', "`n    server:" `
+                                  -replace 'certificate-authority:', "`n    certificate-authority:" `
+                                  -replace 'client-certificate:', "`n    client-certificate:" `
+                                  -replace 'client-key:', "`n    client-key:" `
+                                  -replace 'namespace:', "`n    namespace:" `
+                                  -replace 'insecure-skip-tls-verify:', "`n    insecure-skip-tls-verify:"
+
           Set-Content -Path $kubeconfigPath -Value $kubeconfig
 
           # Check the file content
@@ -286,7 +302,28 @@ jobs:
               Write-Host "Creating temporary test kubeconfig for development purposes..."
               
               # Create a simple valid kubeconfig structure for testing
-              Set-Content -Path $kubeconfigPath -Value "apiVersion: v1`nkind: Config`nclusters:`n- cluster:`n    server: https://localhost:8080`n    insecure-skip-tls-verify: true`n  name: dev-cluster`ncontexts:`n- context:`n    cluster: dev-cluster`n    namespace: default`n    user: dev-user`n  name: dev-context`ncurrent-context: dev-context`nusers:`n- name: dev-user`n  user:`n    token: test-token"
+              $testConfig = @"
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://localhost:8080
+    insecure-skip-tls-verify: true
+  name: dev-cluster
+contexts:
+- context:
+    cluster: dev-cluster
+    namespace: default
+    user: dev-user
+  name: dev-context
+current-context: dev-context
+users:
+- name: dev-user
+  user:
+    token: test-token
+"@
+              
+              Set-Content -Path $kubeconfigPath -Value $testConfig
               
               Write-Host "Using test kubeconfig for development. This will allow workflow to proceed but kubectl commands will fail."
               Write-Host "This is expected in development mode. Actual deployment will be skipped."
