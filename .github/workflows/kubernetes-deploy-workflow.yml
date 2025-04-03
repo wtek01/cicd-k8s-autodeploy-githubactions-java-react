@@ -248,14 +248,26 @@ jobs:
             Write-Host "Continuing without monitoring capabilities."
           }
 
-      - name: Force redeploy services
+      - name: Force redeployment of services
         shell: powershell
         run: |
           Write-Host "Forcing redeployment of services..."
 
-          # Restart deployments to ensure latest version is used
-          kubectl rollout restart deployment/user-service -n microservices
-          kubectl rollout restart deployment/order-service -n microservices
+          # Check if deployments exist before restarting them
+          $userServiceExists = kubectl get deployment/user-service -n microservices --ignore-not-found
+          $orderServiceExists = kubectl get deployment/order-service -n microservices --ignore-not-found
+
+          if ($userServiceExists) {
+            kubectl rollout restart deployment/user-service -n microservices
+          } else {
+            Write-Host "User service deployment not found. It may not have been created yet."
+          }
+
+          if ($orderServiceExists) {
+            kubectl rollout restart deployment/order-service -n microservices
+          } else {
+            Write-Host "Order service deployment not found. It may not have been created yet."
+          }
 
           # For stateful applications like Kafka, we don't restart to avoid data loss
 
