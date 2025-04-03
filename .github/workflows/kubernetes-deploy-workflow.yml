@@ -45,7 +45,7 @@ jobs:
           }
 
           # Create kubeconfig content with correct line endings
-          $content = "apiVersion: v1`nkind: Config`nclusters:`n- cluster:`n    certificate-authority: C:\Users\gmelk\.minikube\ca.crt`n    server: https://127.0.0.1:59455`n  name: minikube`ncontexts:`n- context:`n    cluster: minikube`n    namespace: default`n    user: minikube`n  name: minikube`ncurrent-context: minikube`npreferences: {}`nusers:`n- name: minikube`n  user:`n    client-certificate: C:\Users\gmelk\.minikube\profiles\minikube\client.crt`n    client-key: C:\Users\gmelk\.minikube\profiles\minikube\client.key"
+          $content = "apiVersion: v1`nkind: Config`nclusters:`n- cluster:`n    certificate-authority: C:\Users\gmelk\.minikube\ca.crt`n    server: https://127.0.0.1:52623`n  name: minikube`ncontexts:`n- context:`n    cluster: minikube`n    namespace: default`n    user: minikube`n  name: minikube`ncurrent-context: minikube`npreferences: {}`nusers:`n- name: minikube`n  user:`n    client-certificate: C:\Users\gmelk\.minikube\profiles\minikube\client.crt`n    client-key: C:\Users\gmelk\.minikube\profiles\minikube\client.key"
 
           # Write to config file
           $content | Out-File -FilePath "$HOME/.kube/config" -Encoding utf8 -Force
